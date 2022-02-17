@@ -1,0 +1,2 @@
+class NoPathForConversionError(Exception):
+    pass

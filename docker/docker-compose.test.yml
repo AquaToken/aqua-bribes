@@ -1,0 +1,20 @@
+version: '3'
+
+services:
+  db:
+    image: postgres:alpine
+    environment:
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: test
+      POSTGRES_DB: test
+
+  backend:
+    build:
+      context: ..
+      dockerfile: ./Dockerfile
+      args:
+        REQUIREMENTS_FILE: "dev.txt"
+    command: bash -c "sleep 10 && /code/scripts/wait-for-it.sh db:5432 && . /code/scripts/runtests.sh"
+    environment:
+      DATABASE_URL: "postgres://test:test@db/test"
+      DJANGO_SETTINGS_MODULE: "config.settings.dev"
