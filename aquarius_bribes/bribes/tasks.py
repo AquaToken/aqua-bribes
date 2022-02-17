@@ -35,7 +35,6 @@ def claim_bribes():
             message = bribe.message or ''
             message += '\n' + str(e)
             bribe.message = message
-            print (message)
             bribe.status = Bribe.STATUS_FAILED_CLAIM
             bribe.save()
 
@@ -49,12 +48,12 @@ def return_bribes():
     for bribe in ready_to_return:
         try:
             response = bribe_processor.claim_and_return(bribe)
+            bribe.refund_tx_hash = response['hash']
             bribe.status = Bribe.STATUS_RETURNED
             bribe.save()
         except Exception as e:
             message = bribe.message or ''
             message += '\n' + str(e)
             bribe.message = message
-            print (message)
             bribe.status = Bribe.STATUS_FAILED_RETURN
             bribe.save()

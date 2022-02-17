@@ -166,3 +166,13 @@ FCM_DJANGO_SETTINGS['FCM_SERVER_KEY'] = env('FCM_SERVER_KEY', default=None)
 
 STELLAR_PASSPHRASE = 'Public Global Stellar Network ; September 2015'
 HORIZON_URL = 'https://horizon.stellar.lobstr.co'
+
+# Bribe configuration
+# --------------------------------------------------------------------------
+from decimal import Decimal
+
+BRIBE_WALLET_ADDRESS = env('BRIBE_WALLET_ADDRESS')
+BRIBE_WALLET_SIGNER = env('BRIBE_WALLET_SIGNER')
+
+REWARD_ASSET_CODE = env('REWARD_ASSET_CODE')
+REWARD_ASSET_ISSUER = env('REWARD_ASSET_ISSUER')

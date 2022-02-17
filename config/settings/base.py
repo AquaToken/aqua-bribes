@@ -200,6 +200,9 @@ from decimal import Decimal
 BRIBE_WALLET_ADDRESS = NotImplemented
 BRIBE_WALLET_SIGNER = NotImplemented
 
+REWARD_ASSET_CODE = NotImplemented
+REWARD_ASSET_ISSUER = NotImplemented
+
 
 CONSTANCE_CONFIG = {
     'CONVERTATION_AMOUNT': (Decimal('100000'), 'Amount in aqua needed for bribe accept', Decimal),

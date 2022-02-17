@@ -2,6 +2,9 @@ from django.conf import settings
 
 from constance import config
 from stellar_sdk import Asset, TransactionBuilder
+from stellar_sdk.strkey import StrKey
+from stellar_sdk.xdr.utils import from_xdr_amount
+from stellar_sdk.xdr import TransactionMeta
 
 from aquarius_bribes.bribes.exceptions import NoPathForConversionError
 from aquarius_bribes.bribes.utils import get_horizon
@@ -134,7 +137,40 @@ class BribeProcessor(object):
         else:
             transaction_envelope = builder.build()
             transaction_envelope.sign(self.bribe_signer)
-            return self.horizon.submit_transaction(transaction_envelope)
+            response = self.horizon.submit_transaction(transaction_envelope)
+            self.process_response(response, bribe)
+            return response
+
+    def process_response(self, response, bribe):
+        meta = TransactionMeta.from_xdr(response['result_meta_xdr'])
+
+        path_payment_changes = meta.v2.operations[2].changes.ledger_entry_changes
+        for change in path_payment_changes:
+            if change.updated and change.updated.data and change.updated.data.trust_line:
+                trustline = change.updated.data.trust_line
+                public_key = StrKey.encode_ed25519_public_key(
+                    trustline.account_id.account_id.ed25519.uint256
+                )
+                asset = Asset.from_xdr_object(trustline.asset)
+                if public_key == self.bribe_address and asset == bribe.asset:
+                    asset_amount_after = from_xdr_amount(trustline.balance.int64)
+                elif public_key == self.bribe_address and asset == self.convert_to_asset:
+                    aqua_before = from_xdr_amount(trustline.balance.int64)
+            elif change.state and change.updated.data and change.updated.data.trust_line:
+                trustline = change.state.data.trust_line
+                public_key = StrKey.encode_ed25519_public_key(
+                    trustline.account_id.account_id.ed25519.uint256
+                )
+                asset = Asset.from_xdr_object(trustline.asset)
+                if public_key == self.bribe_address and asset == bribe.asset:
+                    asset_amount_before = from_xdr_amount(trustline.balance.int64)
+                elif public_key == self.bribe_address and asset == self.convert_to_asset:
+                    aqua_after = from_xdr_amount(trustline.balance.int64)
+
+        bribe.amount_for_bribes = bribe.amount - (asset_amount_before - asset_amount_after)
+        bribe.amount_aqua = aqua_before - aqua_after
+        bribe.convertation_tx_hash = response['hash']
+        bribe.save()
 
     def claim_and_return(self, bribe, using_builder=None):
         builder = using_builder or self._get_builder()

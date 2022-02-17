@@ -42,6 +42,7 @@ class Bribe(models.Model):
     amount_for_bribes = models.DecimalField(max_digits=20, decimal_places=7, null=True)
     amount_aqua = models.DecimalField(max_digits=20, decimal_places=7, null=True)
     convertation_tx_hash = models.CharField(max_length=255, null=True, default=None)
+    refund_tx_hash = models.CharField(max_length=255, null=True, default=None)
 
     claimable_balance_id = models.CharField(max_length=255, unique=True)
     paging_token = models.CharField(max_length=255)

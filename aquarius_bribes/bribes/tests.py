@@ -113,6 +113,7 @@ class BribesTests(TestCase):
         print(self.account_1.public_key, self.account_1.secret)
         print(self.default_market_key.public_key, self.default_market_key.secret)
         print(self.asset_xxx_issuer.public_key, self.asset_xxx_issuer.secret)
+        print(random_asset_issuer.public_key, random_asset_issuer.secret)
 
         self.asset_xxx = Asset(code='XXX', issuer=self.asset_xxx_issuer.public_key)
         self._load_or_create_account(self.asset_xxx_issuer.public_key)
@@ -210,7 +211,7 @@ class BribesTests(TestCase):
         self.assertEqual(Bribe.objects.first().status, Bribe.STATUS_NO_PATH_FOR_CONVERSION)
 
 
-    def _test_bribe_claim_with_path(self):
+    def test_bribe_claim_with_path(self):
         loader = BribesLoader(self.bribe_wallet.public_key, self.bribe_wallet.secret)
         loader.load_bribes()
 
@@ -246,12 +247,16 @@ class BribesTests(TestCase):
         self.assertEqual(Bribe.objects.first().start_at, start_at)
 
         config.CONVERTATION_AMOUNT = Decimal(1)
-        self._prepare_orderbook(config.CONVERTATION_AMOUNT, '1')
+        self._prepare_orderbook(Decimal('100'), Decimal('0.33'))
+
+        return
         claim_bribes()
 
         self.assertEqual(Bribe.objects.first().status, Bribe.STATUS_ACTIVE)
+        self.assertEqual(Bribe.objects.first().amount_for_bribes, Decimal('96.9696969'))
+        self.assertEqual(Bribe.objects.first().amount_aqua, config.CONVERTATION_AMOUNT)
 
-    def test_bribe_claim_without_path_and_return(self):
+    def _test_bribe_claim_without_path_and_return(self):
         loader = BribesLoader(self.bribe_wallet.public_key, self.bribe_wallet.secret)
         loader.load_bribes()
 
