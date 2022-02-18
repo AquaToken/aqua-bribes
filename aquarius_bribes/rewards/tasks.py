@@ -1,7 +1,9 @@
 from django.conf import settings
 from django.utils import timezone
 
+from datetime import timedelta
 from decimal import Decimal, ROUND_UP
+from stellar_sdk import Asset
 
 from aquarius_bribes.bribes.models import Bribe
 from aquarius_bribes.rewards.votes_loader import VotesLoader
@@ -11,7 +13,11 @@ from aquarius_bribes.rewards.utils import SecuredWallet
 from aquarius_bribes.taskapp import app as celery_app
 
 
-@celery_app.task(ignore_result=True)
+DEFAULT_REWARD_PERIOD = timedelta(hours=1)
+PAYREWARD_TIME_LIMIT = timedelta(minutes=20)
+
+
+@celery_app.task(ignore_result=True, soft_time_limit=60 * 10, time_limit=60 * 15)
 def task_load_votes():
     snapshot_time = timezone.now()
     snapshot_time = snapshot_time.replace(minute=0, second=0, microsecond=0)
@@ -25,9 +31,14 @@ def task_load_votes():
         loader = VotesLoader(market_key, snapshot_time)
         loader.load_votes()
 
+    task_pay_rewards.delay()
 
-@celery_app.task(ignore_result=True)
-def task_pay_rewards():
+
+@celery_app.task(ignore_result=True, soft_time_limit=PAYREWARD_TIME_LIMIT.total_seconds(), time_limit=60 * 25)
+def task_pay_rewards(reward_period=DEFAULT_REWARD_PERIOD):
+    stop_at = timezone.now() + PAYREWARD_TIME_LIMIT
+    aqua = Asset(code=settings.REWARD_ASSET_CODE, issuer=settings.REWARD_ASSET_ISSUER)
+
     snapshot_time = timezone.now()
     snapshot_time = snapshot_time.replace(minute=0, second=0, microsecond=0)
 
@@ -50,5 +61,5 @@ def task_pay_rewards():
             secret=settings.BRIBE_WALLET_SIGNER,
         )
 
-        reward_payer = RewardPayer(bribe, reward_wallet)
+        reward_payer = RewardPayer(bribe, reward_wallet, aqua, reward_period, stop_at=stop_at)
         reward_payer.pay_reward(votes)

@@ -12,7 +12,7 @@ from stellar_sdk import Keypair, Server, TransactionBuilder
 
 from aquarius_bribes.bribes.loader import BribesLoader
 from aquarius_bribes.bribes.models import Bribe
-from aquarius_bribes.bribes.tasks import claim_bribes, return_bribes
+from aquarius_bribes.bribes.tasks import task_claim_bribes, task_return_bribes
 
 
 random_asset_issuer = Keypair.random()
@@ -206,7 +206,7 @@ class BribesTests(TestCase):
         start_at = start_at.replace(hour=0, minute=0, second=0, microsecond=0)
         self.assertEqual(Bribe.objects.first().start_at, start_at)
 
-        claim_bribes()
+        task_claim_bribes()
 
         self.assertEqual(Bribe.objects.first().status, Bribe.STATUS_NO_PATH_FOR_CONVERSION)
 
@@ -249,8 +249,7 @@ class BribesTests(TestCase):
         config.CONVERTATION_AMOUNT = Decimal(1)
         self._prepare_orderbook(Decimal('100'), Decimal('0.33'))
 
-        return
-        claim_bribes()
+        task_claim_bribes()
 
         self.assertEqual(Bribe.objects.first().status, Bribe.STATUS_ACTIVE)
         self.assertEqual(Bribe.objects.first().amount_for_bribes, Decimal('96.9696969'))
@@ -291,11 +290,11 @@ class BribesTests(TestCase):
         start_at = start_at.replace(hour=0, minute=0, second=0, microsecond=0)
         self.assertEqual(Bribe.objects.first().start_at, start_at)
 
-        claim_bribes()
+        task_claim_bribes()
 
         self.assertEqual(Bribe.objects.first().status, Bribe.STATUS_NO_PATH_FOR_CONVERSION)
 
-        return_bribes()
+        task_return_bribes()
 
         self.assertEqual(Bribe.objects.first().status, Bribe.STATUS_RETURNED)
 

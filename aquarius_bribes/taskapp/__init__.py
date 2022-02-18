@@ -20,9 +20,29 @@ def setup_periodic_tasks(sender, **kwargs):
     from drf_secure_token.tasks import DELETE_OLD_TOKENS
 
     app.conf.beat_schedule.update({
-        'aquarius_bribes.testapp.tasks.test_task': {
-            'task': 'aquarius_bribes.testapp.tasks.test_task',
-            'run_every': timedelta(seconds=10),
+        'aquarius_bribes.bribes.tasks.task_load_bribes': {
+            'task': 'aquarius.amm_reward.tasks.task_load_bribes',
+            'schedule': crontab(hour='*', minute='0'),
+            'args': (),
+        },
+        'aquarius_bribes.bribes.tasks.task_return_bribes': {
+            'task': 'aquarius.amm_reward.tasks.task_return_bribes',
+            'schedule': crontab(hour='9', minute='0', day_of_week='sunday'),
+            'args': (),
+        },
+        'aquarius_bribes.bribes.tasks.task_claim_bribes': {
+            'task': 'aquarius.amm_reward.tasks.task_claim_bribes',
+            'schedule': crontab(hour='9', minute='0', day_of_week='saturday'),
+            'args': (),
+        },
+        'aquarius_bribes.bribes.tasks.task_load_votes': {
+            'task': 'aquarius.amm_reward.tasks.task_load_votes',
+            'schedule': crontab(hour='*', minute='0'),
+            'args': (),
+        },
+        'aquarius_bribes.bribes.tasks.task_pay_rewards': {
+            'task': 'aquarius.amm_reward.tasks.task_pay_rewards',
+            'schedule': crontab(hour='*', minute='35'),
             'args': (),
         },
         'drf_secure_token.tasks.delete_old_tokens': DELETE_OLD_TOKENS,
