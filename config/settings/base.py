@@ -39,6 +39,7 @@ LOCAL_APPS = [
     'aquarius_bribes.mailing',
     'aquarius_bribes.taskapp',
     'aquarius_bribes.bribes',
+    'aquarius_bribes.rewards',
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS

@@ -1,6 +1,7 @@
 from django.db import models
 
 from datetime import timedelta
+from decimal import Decimal, ROUND_DOWN
 
 from stellar_sdk import Asset
 
@@ -75,3 +76,15 @@ class Bribe(models.Model):
             return Asset.native()
         else:
             return Asset(code=self.asset_code, issuer=self.asset_issuer)
+
+    @property
+    def daily_bribe_amount(self):
+        return Decimal(self.amount_for_bribes  / self.DEFAULT_DURATION.days).quantize(
+            Decimal('0.0000001'), rounding=ROUND_DOWN,
+        )
+
+    @property
+    def daily_aqua_amount(self):
+        return Decimal(self.amount_aqua  / self.DEFAULT_DURATION.days).quantize(
+            Decimal('0.0000001'), rounding=ROUND_DOWN,
+        )
