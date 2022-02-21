@@ -123,12 +123,6 @@ class BribesTests(TestCase):
         self.asset_xxx_issuer = Keypair.random()
         self.reward_asset = Asset(code=settings.REWARD_ASSET_CODE, issuer=settings.REWARD_ASSET_ISSUER)
 
-        print(self.bribe_wallet.public_key, self.bribe_wallet.secret)
-        print(self.account_1.public_key, self.account_1.secret)
-        print(self.default_market_key.public_key, self.default_market_key.secret)
-        print(self.asset_xxx_issuer.public_key, self.asset_xxx_issuer.secret)
-        print(random_asset_issuer.public_key, random_asset_issuer.secret)
-
         self.asset_xxx = Asset(code='XXX', issuer=self.asset_xxx_issuer.public_key)
         self._load_or_create_account(self.asset_xxx_issuer.public_key)
         self._load_or_create_account(random_asset_issuer.public_key)
@@ -152,7 +146,7 @@ class BribesTests(TestCase):
 
         response = self.server.submit_transaction(transaction_envelope)
 
-    def _test_votes_loader(self):
+    def test_votes_loader(self):
         market_key = 'GBPF7NLFCYGZNHU6HS64ZGTE4YCRLAWTLFGOMFTHQ3WSUUFIGOSQFPJT'
         snapshot_time = timezone.now()
         snapshot_time = snapshot_time.replace(minute=0, second=0, microsecond=0)
@@ -221,7 +215,9 @@ class BribesTests(TestCase):
             secret=settings.BRIBE_WALLET_SIGNER,
         )
 
-        reward_payer = RewardPayer(bribe, reward_wallet, self.reward_asset, timedelta(hours=1))
+        reward_period = timedelta(hours=1)
+        reward_amount = bribe.daily_bribe_amount * Decimal(reward_period.total_seconds() / (24 * 3600))
+        reward_payer = RewardPayer(bribe, reward_wallet, self.reward_asset, reward_amount)
         reward_payer.pay_reward(VoteSnapshot.objects.all())
 
         Payout.objects.values_list('status', flat=True).distinct()
