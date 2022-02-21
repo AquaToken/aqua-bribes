@@ -1,6 +1,7 @@
 from django.conf import settings
 
 from constance import config
+from decimal import Decimal
 from stellar_sdk import Asset, TransactionBuilder
 from stellar_sdk.strkey import StrKey
 from stellar_sdk.xdr.utils import from_xdr_amount
@@ -153,19 +154,19 @@ class BribeProcessor(object):
                 )
                 asset = Asset.from_xdr_object(trustline.asset)
                 if public_key == self.bribe_address and asset == bribe.asset:
-                    asset_amount_after = from_xdr_amount(trustline.balance.int64)
+                    asset_amount_after = Decimal(from_xdr_amount(trustline.balance.int64))
                 elif public_key == self.bribe_address and asset == self.convert_to_asset:
-                    aqua_before = from_xdr_amount(trustline.balance.int64)
-            elif change.state and change.updated.data and change.updated.data.trust_line:
+                    aqua_before = Decimal(from_xdr_amount(trustline.balance.int64))
+            elif change.state and change.state.data and change.state.data.trust_line:
                 trustline = change.state.data.trust_line
                 public_key = StrKey.encode_ed25519_public_key(
                     trustline.account_id.account_id.ed25519.uint256
                 )
                 asset = Asset.from_xdr_object(trustline.asset)
                 if public_key == self.bribe_address and asset == bribe.asset:
-                    asset_amount_before = from_xdr_amount(trustline.balance.int64)
+                    asset_amount_before = Decimal(from_xdr_amount(trustline.balance.int64))
                 elif public_key == self.bribe_address and asset == self.convert_to_asset:
-                    aqua_after = from_xdr_amount(trustline.balance.int64)
+                    aqua_after = Decimal(from_xdr_amount(trustline.balance.int64))
 
         bribe.amount_for_bribes = bribe.amount - (asset_amount_before - asset_amount_after)
         bribe.amount_aqua = aqua_before - aqua_after

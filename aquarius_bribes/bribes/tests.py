@@ -109,12 +109,6 @@ class BribesTests(TestCase):
         self.asset_xxx_issuer = Keypair.random()
         self.reward_asset = Asset(code=settings.REWARD_ASSET_CODE, issuer=settings.REWARD_ASSET_ISSUER)
 
-        print(self.bribe_wallet.public_key, self.bribe_wallet.secret)
-        print(self.account_1.public_key, self.account_1.secret)
-        print(self.default_market_key.public_key, self.default_market_key.secret)
-        print(self.asset_xxx_issuer.public_key, self.asset_xxx_issuer.secret)
-        print(random_asset_issuer.public_key, random_asset_issuer.secret)
-
         self.asset_xxx = Asset(code='XXX', issuer=self.asset_xxx_issuer.public_key)
         self._load_or_create_account(self.asset_xxx_issuer.public_key)
         self._load_or_create_account(random_asset_issuer.public_key)
@@ -135,43 +129,7 @@ class BribesTests(TestCase):
 
         response = self.server.submit_transaction(transaction_envelope)
 
-    def _test_correct_bribe_parsing(self):
-        loader = BribesLoader(self.bribe_wallet.public_key, self.bribe_wallet.secret)
-        loader.load_bribes()
-
-        builder = self._get_builder(self.account_1)
-
-        claim_after = timezone.now() + timedelta(days=7)
-        # claim_after = timezone.now() + timedelta(minutes=1)
-        claim_after_timestamp = int(claim_after.strftime("%s"))
-        claimants = [
-            Claimant(
-                destination=self.bribe_wallet.public_key,
-                predicate=ClaimPredicate.predicate_not(
-                    ClaimPredicate.predicate_before_absolute_time(claim_after_timestamp)
-                ),
-            ),
-            Claimant(
-                destination=self.default_market_key.public_key,
-                predicate=ClaimPredicate.predicate_not(ClaimPredicate.predicate_unconditional()),
-            )
-        ]
-        builder = self._send_claim(self.account_1, claimants, self.asset_xxx, amount=100, builder=builder)
-        transaction_envelope = builder.build()
-        transaction_envelope.sign(self.account_1.secret)
-        response = self.server.submit_transaction(transaction_envelope)
-
-        loader = BribesLoader(self.bribe_wallet.public_key, self.bribe_wallet.secret)
-        loader.load_bribes()
-
-        self.assertEqual(Bribe.objects.count(), 1)
-        self.assertEqual(Bribe.objects.first().status, Bribe.STATUS_PENDING)
-        start_at = timezone.now()
-        start_at = claim_after + timedelta(days=8 - claim_after.isoweekday())
-        start_at = start_at.replace(hour=0, minute=0, second=0, microsecond=0)
-        self.assertEqual(Bribe.objects.first().start_at, start_at)
-
-    def _test_bribe_claim_without_path(self):
+    def test_bribe_claim_without_path(self):
         loader = BribesLoader(self.bribe_wallet.public_key, self.bribe_wallet.secret)
         loader.load_bribes()
 
@@ -209,6 +167,93 @@ class BribesTests(TestCase):
         task_claim_bribes()
 
         self.assertEqual(Bribe.objects.first().status, Bribe.STATUS_NO_PATH_FOR_CONVERSION)
+
+    def test_bribe_claim_without_path_and_return(self):
+        loader = BribesLoader(self.bribe_wallet.public_key, self.bribe_wallet.secret)
+        loader.load_bribes()
+
+        builder = self._get_builder(self.account_1)
+
+        claim_after = timezone.now() + timedelta(seconds=1)
+        claim_after_timestamp = int(claim_after.strftime("%s"))
+        claimants = [
+            Claimant(
+                destination=self.bribe_wallet.public_key,
+                predicate=ClaimPredicate.predicate_not(
+                    ClaimPredicate.predicate_before_absolute_time(claim_after_timestamp)
+                ),
+            ),
+            Claimant(
+                destination=self.default_market_key.public_key,
+                predicate=ClaimPredicate.predicate_not(ClaimPredicate.predicate_unconditional()),
+            )
+        ]
+        builder = self._send_claim(self.account_1, claimants, self.asset_xxx, amount=100, builder=builder)
+        transaction_envelope = builder.build()
+        transaction_envelope.sign(self.account_1.secret)
+        response = self.server.submit_transaction(transaction_envelope)
+
+        loader = BribesLoader(self.bribe_wallet.public_key, self.bribe_wallet.secret)
+        loader.load_bribes()
+
+        self.assertEqual(Bribe.objects.count(), 1)
+        self.assertEqual(Bribe.objects.first().status, Bribe.STATUS_PENDING)
+        start_at = timezone.now()
+        start_at = claim_after + timedelta(days=8 - claim_after.isoweekday())
+        start_at = start_at.replace(hour=0, minute=0, second=0, microsecond=0)
+        self.assertEqual(Bribe.objects.first().start_at, start_at)
+
+        task_claim_bribes()
+
+        self.assertEqual(Bribe.objects.first().status, Bribe.STATUS_NO_PATH_FOR_CONVERSION)
+
+        task_return_bribes()
+
+        self.assertEqual(Bribe.objects.first().status, Bribe.STATUS_RETURNED)
+
+        claims = self.server.claimable_balances().for_claimant(
+            self.bribe_wallet.public_key,
+        ).for_sponsor(self.account_1.public_key).limit(100).order(
+            desc=False,
+        ).call()['_embedded']['records']
+
+        self.assertEqual(len(claims), 0)
+
+    def test_correct_bribe_parsing(self):
+        loader = BribesLoader(self.bribe_wallet.public_key, self.bribe_wallet.secret)
+        loader.load_bribes()
+
+        builder = self._get_builder(self.account_1)
+
+        claim_after = timezone.now() + timedelta(days=7)
+        # claim_after = timezone.now() + timedelta(minutes=1)
+        claim_after_timestamp = int(claim_after.strftime("%s"))
+        claimants = [
+            Claimant(
+                destination=self.bribe_wallet.public_key,
+                predicate=ClaimPredicate.predicate_not(
+                    ClaimPredicate.predicate_before_absolute_time(claim_after_timestamp)
+                ),
+            ),
+            Claimant(
+                destination=self.default_market_key.public_key,
+                predicate=ClaimPredicate.predicate_not(ClaimPredicate.predicate_unconditional()),
+            )
+        ]
+        builder = self._send_claim(self.account_1, claimants, self.asset_xxx, amount=100, builder=builder)
+        transaction_envelope = builder.build()
+        transaction_envelope.sign(self.account_1.secret)
+        response = self.server.submit_transaction(transaction_envelope)
+
+        loader = BribesLoader(self.bribe_wallet.public_key, self.bribe_wallet.secret)
+        loader.load_bribes()
+
+        self.assertEqual(Bribe.objects.count(), 1)
+        self.assertEqual(Bribe.objects.first().status, Bribe.STATUS_PENDING)
+        start_at = timezone.now()
+        start_at = claim_after + timedelta(days=8 - claim_after.isoweekday())
+        start_at = start_at.replace(hour=0, minute=0, second=0, microsecond=0)
+        self.assertEqual(Bribe.objects.first().start_at, start_at)
 
 
     def test_bribe_claim_with_path(self):
@@ -254,54 +299,3 @@ class BribesTests(TestCase):
         self.assertEqual(Bribe.objects.first().status, Bribe.STATUS_ACTIVE)
         self.assertEqual(Bribe.objects.first().amount_for_bribes, Decimal('96.9696969'))
         self.assertEqual(Bribe.objects.first().amount_aqua, config.CONVERTATION_AMOUNT)
-
-    def _test_bribe_claim_without_path_and_return(self):
-        loader = BribesLoader(self.bribe_wallet.public_key, self.bribe_wallet.secret)
-        loader.load_bribes()
-
-        builder = self._get_builder(self.account_1)
-
-        claim_after = timezone.now() + timedelta(seconds=1)
-        claim_after_timestamp = int(claim_after.strftime("%s"))
-        claimants = [
-            Claimant(
-                destination=self.bribe_wallet.public_key,
-                predicate=ClaimPredicate.predicate_not(
-                    ClaimPredicate.predicate_before_absolute_time(claim_after_timestamp)
-                ),
-            ),
-            Claimant(
-                destination=self.default_market_key.public_key,
-                predicate=ClaimPredicate.predicate_not(ClaimPredicate.predicate_unconditional()),
-            )
-        ]
-        builder = self._send_claim(self.account_1, claimants, self.asset_xxx, amount=100, builder=builder)
-        transaction_envelope = builder.build()
-        transaction_envelope.sign(self.account_1.secret)
-        response = self.server.submit_transaction(transaction_envelope)
-
-        loader = BribesLoader(self.bribe_wallet.public_key, self.bribe_wallet.secret)
-        loader.load_bribes()
-
-        self.assertEqual(Bribe.objects.count(), 1)
-        self.assertEqual(Bribe.objects.first().status, Bribe.STATUS_PENDING)
-        start_at = timezone.now()
-        start_at = claim_after + timedelta(days=8 - claim_after.isoweekday())
-        start_at = start_at.replace(hour=0, minute=0, second=0, microsecond=0)
-        self.assertEqual(Bribe.objects.first().start_at, start_at)
-
-        task_claim_bribes()
-
-        self.assertEqual(Bribe.objects.first().status, Bribe.STATUS_NO_PATH_FOR_CONVERSION)
-
-        task_return_bribes()
-
-        self.assertEqual(Bribe.objects.first().status, Bribe.STATUS_RETURNED)
-
-        claims = self.server.claimable_balances().for_claimant(
-            self.bribe_wallet.public_key,
-        ).limit(100).order(
-            desc=False,
-        ).call()['_embedded']['records']
-
-        self.assertEqual(len(claims), 0)
