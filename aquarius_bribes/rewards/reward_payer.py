@@ -11,6 +11,7 @@ from stellar_sdk.exceptions import BaseHorizonError, NotFoundError
 from stellar_sdk.server import Server
 from stellar_sdk.transaction_builder import TransactionBuilder, TransactionEnvelope
 
+from aquarius_bribes.bribes.utils import get_horizon
 from aquarius_bribes.rewards.models import Payout
 
 
@@ -21,7 +22,7 @@ class BaseRewardPayer(object):
         self.bribe = bribe
         self.asset = reward_asset
         self.payer_wallet = payer_wallet
-        self.server = Server(settings.HORIZON_URL)
+        self.server = get_horizon()
         self.time_before_check_timeouted_transactions = 5
         self.stop_at = stop_at
         self.reward_amount = reward_amount
