@@ -17,26 +17,21 @@ from aquarius_bribes.rewards.models import Payout
 class BaseRewardPayer(object):
     payout_class = None
 
-    def __init__(self, bribe, payer_wallet, reward_asset, reward_period, stop_at=None):
+    def __init__(self, bribe, payer_wallet, reward_asset, reward_amount, stop_at=None):
         self.bribe = bribe
-        self.reward_asset = reward_asset
-        self.asset = bribe.asset
+        self.asset = reward_asset
         self.payer_wallet = payer_wallet
         self.server = Server(settings.HORIZON_URL)
         self.time_before_check_timeouted_transactions = 5
         self.stop_at = stop_at
-        self.bribes_for_period = self.bribe.daily_bribe_amount * Decimal(reward_period.total_seconds() / (24 * 3600))
-        self.aqua_for_period = self.bribe.daily_aqua_amount * Decimal(reward_period.total_seconds() / (24 * 3600))
-
-        print (self.bribes_for_period)
-        print (self.aqua_for_period)
+        self.reward_amount = reward_amount
 
     def _clean_rewards(self, rewards):
         raise NotImplementedError()
 
     def _get_reward_page(self, rewards):
         qs = self._clean_rewards(rewards)
-        return list(qs[:50])
+        return list(qs[:100])
 
     def _get_memo(self):
         raise NotImplementedError()
@@ -62,9 +57,6 @@ class BaseRewardPayer(object):
         for reward in rewards_page:
             payouts.append(
                 self._get_payout_instance(reward, total_votes),
-            )
-            payouts.append(
-                self._get_aqua_payout_instance(reward, total_votes),
             )
         return payouts
 
@@ -194,7 +186,7 @@ class RewardPayer(BaseRewardPayer):
         return 'Bribe: {}...{}'.format(self.bribe.market_key[:4], self.bribe.market_key[-4:])
 
     def _get_payout_instance(self, vote, total_votes):
-        reward_amount = (self.bribes_for_period * vote.votes_value / total_votes)
+        reward_amount = (self.reward_amount * vote.votes_value / total_votes)
         reward_amount = reward_amount.quantize(Decimal('0.0000000'), rounding=ROUND_DOWN)
         return self.payout_class(
             vote_snapshot=vote,
@@ -202,18 +194,6 @@ class RewardPayer(BaseRewardPayer):
             asset_code=self.asset.code,
             asset_issuer=self.asset.issuer or '',
             reward_amount=reward_amount,
-            status=self.payout_class.STATUS_SUCCESS,
-        )
-
-    def _get_aqua_payout_instance(self, vote, total_votes):
-        reward_amount = (self.aqua_for_period * vote.votes_value / total_votes)
-        reward_amount = reward_amount.quantize(Decimal('0.0000000'), rounding=ROUND_DOWN)
-        return self.payout_class(
-            vote_snapshot=vote,
-            bribe=self.bribe,
-            reward_amount=reward_amount,
-            asset_code=self.reward_asset.code,
-            asset_issuer=self.reward_asset.issuer or '',
             status=self.payout_class.STATUS_SUCCESS,
         )
 

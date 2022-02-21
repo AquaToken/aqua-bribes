@@ -37,29 +37,28 @@ def task_load_votes():
 @celery_app.task(ignore_result=True, soft_time_limit=PAYREWARD_TIME_LIMIT.total_seconds(), time_limit=60 * 25)
 def task_pay_rewards(reward_period=DEFAULT_REWARD_PERIOD):
     stop_at = timezone.now() + PAYREWARD_TIME_LIMIT
-    aqua = Asset(code=settings.REWARD_ASSET_CODE, issuer=settings.REWARD_ASSET_ISSUER)
 
     snapshot_time = timezone.now()
     snapshot_time = snapshot_time.replace(minute=0, second=0, microsecond=0)
 
-    markets_with_active_bribes = Bribe.objects.filter(
-        start_at__lte=snapshot_time, stop_at__gt=snapshot_time, status=Bribe.STATUS_ACTIVE,
-    ).values_list('market_key', flat=True).distinct()
+    reward_wallet = SecuredWallet(
+        public_key=settings.BRIBE_WALLET_ADDRESS,
+        secret=settings.BRIBE_WALLET_SIGNER,
+    )
 
-    for market_key in markets_with_active_bribes:
-        votes = VoteSnapshot.objects.filter(snapshot_time=snapshot_time, market_key=market_key)
+    active_bribes = Bribe.objects.filter(
+        start_at__lte=snapshot_time, stop_at__gt=snapshot_time, status=Bribe.STATUS_ACTIVE,
+    )
+
+    for bribe in active_bribes:
+        votes = VoteSnapshot.objects.filter(snapshot_time=snapshot_time, market_key=bribe.market_key)
         total_votes = votes.aggregate(total_votes=models.Sum("votes_value"))["total_votes"]
 
-        smallest_rewarded_votes_amount = (total_votes * Decimal("0.0000001"))
-        smallest_rewarded_votes_amount = smallest_rewarded_votes_amount.quantize(
-            Decimal("0.0000001"), rounding=ROUND_UP,
-        )
-        votes = votes.filter(votes_value__gte=smallest_rewarded_votes_amount)
+        reward_amount = bribe.daily_bribe_amount * Decimal(reward_period.total_seconds() / (24 * 3600))
+        reward_payer = RewardPayer(bribe, reward_wallet, bribe.asset, reward_amount, stop_at=stop_at)
+        reward_payer.pay_reward(votes)
 
-        reward_wallet = SecuredWallet(
-            public_key=settings.BRIBE_WALLET_ADDRESS,
-            secret=settings.BRIBE_WALLET_SIGNER,
-        )
-
-        reward_payer = RewardPayer(bribe, reward_wallet, aqua, reward_period, stop_at=stop_at)
+        reward_amount = bribe.daily_aqua_amount * Decimal(reward_period.total_seconds() / (24 * 3600))
+        aqua = Asset(code=settings.REWARD_ASSET_CODE, issuer=settings.REWARD_ASSET_ISSUER)
+        reward_payer = RewardPayer(bribe, reward_wallet, aqua, reward_amount, stop_at=stop_at)
         reward_payer.pay_reward(votes)
