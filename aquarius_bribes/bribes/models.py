@@ -63,6 +63,17 @@ class Bribe(models.Model):
             self.market_key[:4], self.market_key[-4:], self.claimable_balance_id[:4], self.claimable_balance_id[-4:],
         )
 
+    def update_active_period(self, time=None, duration=DEFAULT_DURATION):
+        if time is None:
+            time = self.unlock_time
+
+        if time is None:
+            return
+
+        start_at = time + timedelta(days=8 - time.isoweekday())
+        self.start_at = start_at.replace(hour=0, minute=0, second=0, microsecond=0)
+        self.stop_at = self.start_at + duration
+
     @property
     def short_asset(self):
         asset = self.asset_code

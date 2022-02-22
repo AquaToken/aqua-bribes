@@ -26,6 +26,7 @@ def task_claim_bribes():
     for bribe in ready_to_claim:
         try:
             response = bribe_processor.claim_and_convert(bribe)
+            bribe.update_active_period(timezone.now())
             bribe.status = Bribe.STATUS_ACTIVE
             bribe.save()
         except NoPathForConversionError:

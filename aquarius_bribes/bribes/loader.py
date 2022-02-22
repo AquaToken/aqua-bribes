@@ -86,8 +86,6 @@ class BribesLoader(object):
         if not self._is_market_key_predicate_correct(market_key_claim['predicate']):
             messages.append('Invalid predicate: market key predicate incorrect')
 
-        start_at = None
-        stop_at = None
         unlock_time = self._parse_bribe_predicate(bribe_collector_claim['predicate'])
         if not unlock_time:
             messages.append('Invalid predicate: bribe account predicate incorrect time')
@@ -97,9 +95,6 @@ class BribesLoader(object):
 
             if unlock_time:
                 unlock_time = date_parse(unlock_time)
-                start_at = unlock_time + timedelta(days=8 - unlock_time.isoweekday())
-                start_at = start_at.replace(hour=0, minute=0, second=0, microsecond=0)
-                stop_at = start_at + Bribe.DEFAULT_DURATION
         except ValueError:
             unlock_time = None
             balance_created_at = None
@@ -110,7 +105,7 @@ class BribesLoader(object):
         elif len(messages) > 0:
             status = Bribe.STATUS_INVALID
 
-        return Bribe(
+        bribe = Bribe(
             asset_code=asset.code,
             asset_issuer=asset.issuer or '',
             sponsor=sponsor,
@@ -121,11 +116,11 @@ class BribesLoader(object):
             created_at=balance_created_at,
             unlock_time=unlock_time,
             status=status,
-            start_at=start_at,
-            stop_at=stop_at,
             message='\n'.join(messages)
         )
 
+        bribe.update_active_period()
+        return bribe
 
     def process_bribe(self, bribe):
         bribe_instance = self.parse(bribe)
