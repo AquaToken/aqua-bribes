@@ -83,7 +83,7 @@ class Bribe(models.Model):
 
     @property
     def asset(self):
-        if self.asset_code == Asset.native() and self.asset_issuer == '':
+        if self.asset_code == Asset.native().code and self.asset_issuer == '':
             return Asset.native()
         else:
             return Asset(code=self.asset_code, issuer=self.asset_issuer)

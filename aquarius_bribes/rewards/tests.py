@@ -223,3 +223,65 @@ class BribesTests(TestCase):
         Payout.objects.values_list('status', flat=True).distinct()
         self.assertEqual(Payout.objects.values_list('status', flat=True).distinct().count(), 1)
         self.assertEqual(Payout.objects.values_list('status', flat=True).distinct().first(), Payout.STATUS_SUCCESS)
+
+    def test_reward_payer_with_native_asset(self):
+        market_key = 'GBPF7NLFCYGZNHU6HS64ZGTE4YCRLAWTLFGOMFTHQ3WSUUFIGOSQFPJT'
+        snapshot_time = timezone.now()
+        snapshot_time = snapshot_time.replace(minute=0, second=0, microsecond=0)
+
+        builder = self._get_builder(self.account_1)
+
+        votes = []
+        accounts = []
+        for i in range(10):
+            voting_account = Keypair.random()
+            accounts.append(voting_account)
+            votes.append(
+                VoteSnapshot(
+                    votes_value=100,
+                    voting_account=voting_account.public_key,
+                    snapshot_time=snapshot_time,
+                    market_key=market_key,
+                )
+            )
+            builder = self._create_wallet(self.account_1, voting_account, 5, builder=builder)
+            builder = self._trust_asset(voting_account, self.asset_xxx, builder=builder)
+            builder = self._trust_asset(voting_account, self.reward_asset, builder=builder)
+            builder = self._payment(self.asset_xxx_issuer, voting_account, self.asset_xxx, amount=1000, builder=builder)
+
+        transaction_envelope = builder.build()
+
+        for i in range(10):
+            transaction_envelope.sign(accounts[i].secret)
+
+        transaction_envelope.sign(self.account_1.secret)
+        transaction_envelope.sign(self.asset_xxx_issuer.secret)
+
+        response = self.server.submit_transaction(transaction_envelope)
+        VoteSnapshot.objects.bulk_create(votes)
+
+        bribe = Bribe(
+            amount_for_bribes=100000,
+            amount_aqua=config.CONVERTATION_AMOUNT,
+            asset_code=Asset.native().code,
+            asset_issuer=Asset.native().issuer or '',
+            status=Bribe.STATUS_ACTIVE,
+            amount=100000,
+            created_at=timezone.now(),
+            updated_at=timezone.now(),
+        )
+        bribe.save()
+
+        reward_wallet = SecuredWallet(
+            public_key=settings.BRIBE_WALLET_ADDRESS,
+            secret=settings.BRIBE_WALLET_SIGNER,
+        )
+
+        reward_period = timedelta(hours=1)
+        reward_amount = bribe.daily_bribe_amount * Decimal(reward_period.total_seconds() / (24 * 3600))
+        reward_payer = RewardPayer(bribe, reward_wallet, self.reward_asset, reward_amount)
+        reward_payer.pay_reward(VoteSnapshot.objects.all())
+
+        Payout.objects.values_list('stellar_transaction_id', flat=True).distinct()
+        self.assertEqual(Payout.objects.values_list('status', flat=True).distinct().count(), 1)
+        self.assertEqual(Payout.objects.values_list('status', flat=True).distinct().first(), Payout.STATUS_SUCCESS)
