@@ -59,7 +59,7 @@ class Bribe(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
-        return "Bribe: {0}..{1} {2}...{3}".format(
+        return "Bribe: {0}...{1} {2}...{3}".format(
             self.market_key[:4], self.market_key[-4:], self.claimable_balance_id[:4], self.claimable_balance_id[-4:],
         )
 
