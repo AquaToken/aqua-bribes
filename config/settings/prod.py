@@ -160,12 +160,6 @@ if SENTRY_ENABLED:
     )
 
 
-# FCM Push Notifications configuration
-# ------------------------------------
-
-FCM_DJANGO_SETTINGS['FCM_SERVER_KEY'] = env('FCM_SERVER_KEY', default=None)
-
-
 # Horizon configuration
 # --------------------------------------------------------------------------
 

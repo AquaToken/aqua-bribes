@@ -31,7 +31,6 @@ DJANGO_APPS = [
 ]
 
 THIRD_PARTY_APPS = [
-    'fcm_django',
     'drf_secure_token',
 ]
 
