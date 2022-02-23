@@ -13,7 +13,7 @@ from aquarius_bribes.rewards.utils import SecuredWallet
 from aquarius_bribes.taskapp import app as celery_app
 
 
-DEFAULT_REWARD_PERIOD = timedelta(hours=1)
+DEFAULT_REWARD_PERIOD = timedelta(hours=24)
 PAYREWARD_TIME_LIMIT = timedelta(minutes=20)
 
 
