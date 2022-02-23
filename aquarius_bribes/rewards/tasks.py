@@ -37,7 +37,7 @@ def task_load_votes():
         loader = VotesLoader(market_key, snapshot_time)
         loader.load_votes()
 
-    task_pay_rewards.delay()
+    # task_pay_rewards.delay()
 
 
 @celery_app.task(ignore_result=True, soft_time_limit=PAYREWARD_TIME_LIMIT.total_seconds(), time_limit=60 * 25)
