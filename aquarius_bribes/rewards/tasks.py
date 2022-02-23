@@ -17,6 +17,12 @@ DEFAULT_REWARD_PERIOD = timedelta(hours=1)
 PAYREWARD_TIME_LIMIT = timedelta(minutes=20)
 
 
+@celery_app.task(ignore_result=True, soft_time_limit=60 * 20, time_limit=60 * 30)
+def task_run_load_votes():
+    hour = random.randint(0, 23)
+    task_load_votes.apply_async(countdown=hour * 60 * 60)
+
+
 @celery_app.task(ignore_result=True, soft_time_limit=60 * 10, time_limit=60 * 15)
 def task_load_votes():
     snapshot_time = timezone.now()
