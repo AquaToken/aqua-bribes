@@ -116,7 +116,12 @@ class AggregatedByAssetBribe(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
-        return '{}...{}'.format(self.asset_issuer[:4], self.asset_issuer[-4:], self.asset_code, self.asset_issuer[-4:])
+        if self.asset.type == Asset.native().type:
+            return self.asset.code
+        return '{} ({}...{})'.format(
+            self.asset.code, self.asset_issuer[:4], self.asset_issuer[-4:],
+            self.asset_code, self.asset_issuer[-4:],
+        )
 
     @property
     def daily_amount(self):

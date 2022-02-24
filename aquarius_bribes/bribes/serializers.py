@@ -1,12 +1,11 @@
 from rest_framework import serializers
 
-from aquarius_bribes.bribes.models import Bribe
+from aquarius_bribes.bribes.models import AggregatedByAssetBribe
 
 
-class BribeSerializer(serializers.ModelSerializer):
+class AggregatedByAssetBribeSerializer(serializers.ModelSerializer):
     class Meta:
-        model = Bribe
+        model = AggregatedByAssetBribe
         fields = (
-            'market_key', 'sponsor', 'amount', 'amount_for_bribes', 'amount_aqua',
-            'claimable_balance_id', 'unlock_time', 'start_at', 'stop_at', 'created_at',
+            'market_key', 'amount', 'start_at', 'stop_at', 'asset_code', 'asset_issuer', 'daily_amount',
         )

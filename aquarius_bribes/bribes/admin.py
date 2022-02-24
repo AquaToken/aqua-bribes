@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from aquarius_bribes.bribes.models import Bribe
+from aquarius_bribes.bribes.models import AggregatedByAssetBribe, Bribe
 
 
 @admin.register(Bribe)
@@ -20,3 +20,16 @@ class BribeAdmin(admin.ModelAdmin):
 
     def get_short_market_key(self, obj):
         return '{}...{}'.format(obj.market_key[:4], obj.market_key[-4:])
+
+
+@admin.register(AggregatedByAssetBribe)
+class AggregatedByAssetBribeAdmin(admin.ModelAdmin):
+    list_display = [
+        '__str__', 'asset_code', 'asset_issuer', 'market_key',
+        'daily_amount', 'total_reward_amount', 'start_at', 'stop_at', 'created_at',
+    ]
+    readonly_fields = [
+        'asset_code', 'asset_issuer', 'market_key', 'start_at', 'stop_at', 'created_at', 'updated_at',
+    ]
+    search_fields = ['market_key',]
+    ordering = ['-created_at',]

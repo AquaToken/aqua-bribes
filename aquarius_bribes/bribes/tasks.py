@@ -78,7 +78,7 @@ def task_aggregate_bribes(start_at=None, stop_at=None):
     ).annotate(
         total_reward_amount=models.Sum('amount_for_bribes')
     )
-    aqua_bribes = dict(aqua_bribes.values_list("market_key", "reward_sum"))
+    aqua_bribes = dict(aqua_bribes.values_list("market_key", "total_reward_amount"))
 
     aggregated_aqua_by_market = active_bribes.values(
         "market_key", "start_at", "stop_at",
@@ -93,7 +93,7 @@ def task_aggregate_bribes(start_at=None, stop_at=None):
                 asset_issuer=aqua.issuer or '',
                 start_at=bribe['start_at'],
                 stop_at=bribe['stop_at'],
-                total_reward_amount=bribe['total_reward_amount'] + aqua_bribes.get('market_key', 0),
+                total_reward_amount=bribe['total_reward_amount'] + aqua_bribes.get(bribe['market_key'], 0),
             )
         )
 
