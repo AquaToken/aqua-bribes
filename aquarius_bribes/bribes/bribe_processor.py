@@ -147,32 +147,48 @@ class BribeProcessor(object):
             return response
 
     def process_response(self, response, bribe, transaction_envelope):
+        bribe.convertation_tx_hash = response['hash']
+        bribe.save()
+
         if not isinstance(transaction_envelope.transaction.operations[-1], PathPaymentStrictReceive):
             bribe.amount_for_bribes = bribe.amount - config.CONVERTATION_AMOUNT
             bribe.amount_aqua = config.CONVERTATION_AMOUNT
-            bribe.convertation_tx_hash = response['hash']
             bribe.save()
         else:
             meta = TransactionMeta.from_xdr(response['result_meta_xdr'])
 
             path_payment_changes = meta.v2.operations[-1].changes.ledger_entry_changes
             for change in path_payment_changes:
-                if change.updated and change.updated.data and change.updated.data.trust_line:
-                    trustline = change.updated.data.trust_line
+                if change.updated and change.updated.data:
+                    if bribe.asset == Asset.native() and change.updated.data.account:
+                        trustline = change.updated.data.account
+                        asset = Asset.native()
+                    elif change.updated.data.trust_line:
+                        trustline = change.updated.data.trust_line
+                        asset = Asset.from_xdr_object(trustline.asset)
+                    else:
+                        continue
+
                     public_key = StrKey.encode_ed25519_public_key(
                         trustline.account_id.account_id.ed25519.uint256
                     )
-                    asset = Asset.from_xdr_object(trustline.asset)
                     if public_key == self.bribe_address and asset == bribe.asset:
                         asset_amount_after = Decimal(from_xdr_amount(trustline.balance.int64))
                     elif public_key == self.bribe_address and asset == self.convert_to_asset:
                         aqua_before = Decimal(from_xdr_amount(trustline.balance.int64))
-                elif change.state and change.state.data and change.state.data.trust_line:
-                    trustline = change.state.data.trust_line
+                elif change.state and change.state.data:
+                    if bribe.asset == Asset.native() and change.state.data.account:
+                        trustline = change.state.data.account
+                        asset = Asset.native()
+                    elif change.state.data.trust_line:
+                        trustline = change.state.data.trust_line
+                        asset = Asset.from_xdr_object(trustline.asset)
+                    else:
+                        continue
+
                     public_key = StrKey.encode_ed25519_public_key(
                         trustline.account_id.account_id.ed25519.uint256
                     )
-                    asset = Asset.from_xdr_object(trustline.asset)
                     if public_key == self.bribe_address and asset == bribe.asset:
                         asset_amount_before = Decimal(from_xdr_amount(trustline.balance.int64))
                     elif public_key == self.bribe_address and asset == self.convert_to_asset:
@@ -180,7 +196,6 @@ class BribeProcessor(object):
 
             bribe.amount_for_bribes = bribe.amount - (asset_amount_before - asset_amount_after)
             bribe.amount_aqua = aqua_before - aqua_after
-            bribe.convertation_tx_hash = response['hash']
             bribe.save()
 
     def claim_and_return(self, bribe, using_builder=None):

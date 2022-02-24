@@ -117,3 +117,16 @@ class AggregatedByAssetBribe(models.Model):
 
     def __str__(self):
         return '{}...{}'.format(self.asset_issuer[:4], self.asset_issuer[-4:], self.asset_code, self.asset_issuer[-4:])
+
+    @property
+    def daily_amount(self):
+        return Decimal(self.total_reward_amount  / Bribe.DEFAULT_DURATION.days).quantize(
+            Decimal('0.0000001'), rounding=ROUND_DOWN,
+        )
+
+    @property
+    def asset(self):
+        if self.asset_code == Asset.native().code and self.asset_issuer == '':
+            return Asset.native()
+        else:
+            return Asset(code=self.asset_code, issuer=self.asset_issuer)

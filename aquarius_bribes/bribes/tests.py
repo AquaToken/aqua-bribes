@@ -129,7 +129,7 @@ class BribesTests(TestCase):
 
         response = self.server.submit_transaction(transaction_envelope)
 
-    def _test_bribe_claim_without_path(self):
+    def test_bribe_claim_without_path(self):
         loader = BribesLoader(self.bribe_wallet.public_key, self.bribe_wallet.secret)
         loader.load_bribes()
 
@@ -169,7 +169,7 @@ class BribesTests(TestCase):
         self.assertEqual(Bribe.objects.first().status, Bribe.STATUS_NO_PATH_FOR_CONVERSION)
 
 
-    def _test_bribe_claim_without_path_and_return(self):
+    def test_bribe_claim_without_path_and_return(self):
         loader = BribesLoader(self.bribe_wallet.public_key, self.bribe_wallet.secret)
         loader.load_bribes()
 
@@ -220,7 +220,7 @@ class BribesTests(TestCase):
 
         self.assertEqual(len(claims), 0)
 
-    def _test_correct_bribe_parsing(self):
+    def test_correct_bribe_parsing(self):
         loader = BribesLoader(self.bribe_wallet.public_key, self.bribe_wallet.secret)
         loader.load_bribes()
 
@@ -256,7 +256,7 @@ class BribesTests(TestCase):
         start_at = start_at.replace(hour=0, minute=0, second=0, microsecond=0)
         self.assertEqual(Bribe.objects.first().start_at, start_at)
 
-    def _test_bribe_claim_with_path(self):
+    def test_bribe_claim_with_path(self):
         loader = BribesLoader(self.bribe_wallet.public_key, self.bribe_wallet.secret)
         loader.load_bribes()
 
@@ -359,7 +359,7 @@ class BribesTests(TestCase):
             ).first().total_reward_amount, config.CONVERTATION_AMOUNT * 2,
         )
 
-    def _test_bribe_with_reward_asset_claim_with_path(self):
+    def test_bribe_with_reward_asset_claim_with_path(self):
         loader = BribesLoader(self.bribe_wallet.public_key, self.bribe_wallet.secret)
         loader.load_bribes()
 
@@ -406,7 +406,7 @@ class BribesTests(TestCase):
         self.assertEqual(Bribe.objects.first().amount_for_bribes, Decimal('99'))
         self.assertEqual(Bribe.objects.first().amount_aqua, config.CONVERTATION_AMOUNT)
 
-    def _test_bribe_with_native_asset_claim_with_path(self):
+    def test_bribe_with_native_asset_claim_with_path(self):
         loader = BribesLoader(self.bribe_wallet.public_key, self.bribe_wallet.secret)
         loader.load_bribes()
 
@@ -444,10 +444,10 @@ class BribesTests(TestCase):
         self.assertEqual(Bribe.objects.first().start_at, start_at)
 
         config.CONVERTATION_AMOUNT = Decimal(1)
-        print(self._prepare_orderbook(Decimal('100'), Decimal('0.33')))
+        self._prepare_orderbook(Decimal('100'), Decimal('0.33'))
 
         task_claim_bribes()
 
         self.assertEqual(Bribe.objects.first().status, Bribe.STATUS_ACTIVE)
-        self.assertEqual(Bribe.objects.first().amount_for_bribes, Decimal('99'))
+        self.assertEqual(Bribe.objects.first().amount_for_bribes, Decimal('96.9696969'))
         self.assertEqual(Bribe.objects.first().amount_aqua, config.CONVERTATION_AMOUNT)

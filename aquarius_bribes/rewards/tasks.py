@@ -5,7 +5,7 @@ from datetime import timedelta
 from decimal import Decimal, ROUND_UP
 from stellar_sdk import Asset
 
-from aquarius_bribes.bribes.models import Bribe
+from aquarius_bribes.bribes.models import AggregatedByAssetBribe
 from aquarius_bribes.rewards.votes_loader import VotesLoader
 from aquarius_bribes.rewards.models import VoteSnapshot
 from aquarius_bribes.rewards.reward_payer import RewardPayer
@@ -28,9 +28,8 @@ def task_load_votes():
     snapshot_time = timezone.now()
     snapshot_time = snapshot_time.replace(minute=0, second=0, microsecond=0)
 
-    markets_with_active_bribes = Bribe.objects.filter(
+    markets_with_active_bribes = AggregatedByAssetBribe.objects.filter(
         start_at__lte=snapshot_time, stop_at__gt=snapshot_time,
-        status=Bribe.STATUS_ACTIVE,
     ).values_list('market_key', flat=True).distinct()
 
     for market_key in markets_with_active_bribes:
@@ -52,19 +51,14 @@ def task_pay_rewards(reward_period=DEFAULT_REWARD_PERIOD):
         secret=settings.BRIBE_WALLET_SIGNER,
     )
 
-    active_bribes = Bribe.objects.filter(
-        start_at__lte=snapshot_time, stop_at__gt=snapshot_time, status=Bribe.STATUS_ACTIVE,
+    active_bribes = AggregatedByAssetBribe.objects.filter(
+        start_at__lte=snapshot_time, stop_at__gt=snapshot_time,
     )
 
     for bribe in active_bribes:
         votes = VoteSnapshot.objects.filter(snapshot_time=snapshot_time, market_key=bribe.market_key)
         total_votes = votes.aggregate(total_votes=models.Sum("votes_value"))["total_votes"]
 
-        reward_amount = bribe.daily_bribe_amount * Decimal(reward_period.total_seconds() / (24 * 3600))
+        reward_amount = bribe.daily_amount * Decimal(reward_period.total_seconds() / (24 * 3600))
         reward_payer = RewardPayer(bribe, reward_wallet, bribe.asset, reward_amount, stop_at=stop_at)
-        reward_payer.pay_reward(votes)
-
-        reward_amount = bribe.daily_aqua_amount * Decimal(reward_period.total_seconds() / (24 * 3600))
-        aqua = Asset(code=settings.REWARD_ASSET_CODE, issuer=settings.REWARD_ASSET_ISSUER)
-        reward_payer = RewardPayer(bribe, reward_wallet, aqua, reward_amount, stop_at=stop_at)
         reward_payer.pay_reward(votes)
