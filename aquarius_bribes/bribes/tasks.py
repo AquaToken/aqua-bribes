@@ -64,7 +64,7 @@ def task_aggregate_bribes(start_at=None, stop_at=None):
     for bribe in aggregated_by_asset:
         aggregated_bribes.append(
             AggregatedByAssetBribe(
-                market_key=bribe['market_key'],
+                market_key_id=bribe['market_key'],
                 asset_code=bribe['asset_code'],
                 asset_issuer=bribe['asset_issuer'],
                 start_at=bribe['start_at'],
@@ -88,7 +88,7 @@ def task_aggregate_bribes(start_at=None, stop_at=None):
     for bribe in aggregated_aqua_by_market:
         aggregated_bribes.append(
             AggregatedByAssetBribe(
-                market_key=bribe['market_key'],
+                market_key_id=bribe['market_key'],
                 asset_code=aqua.code,
                 asset_issuer=aqua.issuer or '',
                 start_at=bribe['start_at'],

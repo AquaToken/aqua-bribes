@@ -8,7 +8,7 @@ class VoteSnapshotAdmin(admin.ModelAdmin):
     list_display = ('get_short_market_key', 'voting_account', 'votes_value', 'snapshot_time')
 
     def get_short_market_key(self, obj):
-        return '{}...{}'.format(obj.market_key[:8], obj.market_key[-8:])
+        return '{}...{}'.format(obj.market_key_id[:8], obj.market_key_id[-8:])
     get_short_market_key.short_description = 'Market key'
 
 

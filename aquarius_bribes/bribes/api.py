@@ -32,8 +32,8 @@ class AggregatedByAssetBribeListView(ListModelMixin, GenericAPIView):
 
         start_at = timestamp.replace(day=timestamp.day - timestamp.isoweekday() + 1)
         start_at = start_at.replace(hour=0, minute=0, second=0, microsecond=0)
-        stop_at = start_at - Bribe.DEFAULT_DURATION
-        return AggregatedByAssetBribe.objects.filter(start_at=start_at, stop_at=stop_at)
+        stop_at = start_at + Bribe.DEFAULT_DURATION
+        return AggregatedByAssetBribe.objects.filter(start_at=start_at, stop_at=stop_at).order_by('-created_at')
 
     def get(self, request, *args, **kwargs):
         return self.list(request, *args, **kwargs)

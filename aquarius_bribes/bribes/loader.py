@@ -4,7 +4,7 @@ from datetime import timedelta
 from dateutil.parser import parse as date_parse
 from stellar_sdk import Asset
 
-from aquarius_bribes.bribes.models import Bribe
+from aquarius_bribes.bribes.models import Bribe, MarketKey
 from aquarius_bribes.bribes.utils import get_horizon
 
 
@@ -105,11 +105,13 @@ class BribesLoader(object):
         elif len(messages) > 0:
             status = Bribe.STATUS_INVALID
 
+        market_key, _ = MarketKey.objects.get_or_create(market_key=market_key_claim['destination'])
+
         bribe = Bribe(
             asset_code=asset.code,
             asset_issuer=asset.issuer or '',
             sponsor=sponsor,
-            market_key=market_key_claim['destination'],
+            market_key=market_key,
             amount=amount,
             claimable_balance_id=claimable_balance_id,
             paging_token=paging_token,

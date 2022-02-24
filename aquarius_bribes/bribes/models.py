@@ -6,6 +6,13 @@ from decimal import Decimal, ROUND_DOWN
 from stellar_sdk import Asset
 
 
+class MarketKey(models.Model):
+    market_key = models.CharField(max_length=56, primary_key=True)
+
+    def __str__(self):
+        return self.market_key
+
+
 class Bribe(models.Model):
     DEFAULT_DURATION = timedelta(days=7)
 
@@ -32,7 +39,7 @@ class Bribe(models.Model):
     status = models.IntegerField(choices=STATUS_CHOICES)
     message = models.TextField()
 
-    market_key = models.CharField(max_length=56)
+    market_key = models.ForeignKey(MarketKey, related_name='bribes', null=True, on_delete=models.PROTECT)
 
     sponsor = models.CharField(max_length=56)
     amount = models.DecimalField(max_digits=20, decimal_places=7)
@@ -60,7 +67,8 @@ class Bribe(models.Model):
 
     def __str__(self):
         return "Bribe: {0}...{1} {2}...{3}".format(
-            self.market_key[:4], self.market_key[-4:], self.claimable_balance_id[:4], self.claimable_balance_id[-4:],
+            self.market_key_id[:4], self.market_key_id[-4:],
+            self.claimable_balance_id[:4], self.claimable_balance_id[-4:],
         )
 
     def update_active_period(self, time=None, duration=DEFAULT_DURATION):
@@ -102,7 +110,7 @@ class Bribe(models.Model):
 
 
 class AggregatedByAssetBribe(models.Model):
-    market_key = models.CharField(max_length=56)
+    market_key = models.ForeignKey(MarketKey, related_name='aggregated_bribes', null=True, on_delete=models.PROTECT)
 
     asset_code = models.CharField(max_length=12)
     asset_issuer = models.CharField(max_length=56)

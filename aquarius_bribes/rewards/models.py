@@ -2,7 +2,7 @@ from django.db import models
 
 
 class VoteSnapshot(models.Model):
-    market_key = models.CharField(max_length=56)
+    market_key = models.ForeignKey('bribes.MarketKey', null=True, on_delete=models.PROTECT)
 
     votes_value = models.DecimalField(max_digits=20, decimal_places=7)
     voting_account = models.CharField(max_length=56)

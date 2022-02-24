@@ -10,7 +10,7 @@ from decimal import Decimal
 from stellar_sdk import Asset, Claimant, ClaimPredicate
 from stellar_sdk import Keypair, Server, TransactionBuilder
 
-from aquarius_bribes.bribes.models import Bribe
+from aquarius_bribes.bribes.models import Bribe, MarketKey
 from aquarius_bribes.rewards.models import Payout, VoteSnapshot
 from aquarius_bribes.rewards.reward_payer import RewardPayer
 from aquarius_bribes.rewards.votes_loader import VotesLoader
@@ -119,7 +119,8 @@ class BribesTests(TestCase):
         self.server = Server(settings.HORIZON_URL)
         self.bribe_wallet = bribe_wallet
         self.account_1 = Keypair.random()
-        self.default_market_key = Keypair.random()
+        self.default_market_key = MarketKey(market_key=Keypair.random().public_key)
+        self.default_market_key.save()
         self.asset_xxx_issuer = Keypair.random()
         self.reward_asset = Asset(code=settings.REWARD_ASSET_CODE, issuer=settings.REWARD_ASSET_ISSUER)
 
@@ -147,7 +148,8 @@ class BribesTests(TestCase):
         response = self.server.submit_transaction(transaction_envelope)
 
     def test_votes_loader(self):
-        market_key = 'GBPF7NLFCYGZNHU6HS64ZGTE4YCRLAWTLFGOMFTHQ3WSUUFIGOSQFPJT'
+        market_key = MarketKey(market_key='GBPF7NLFCYGZNHU6HS64ZGTE4YCRLAWTLFGOMFTHQ3WSUUFIGOSQFPJT')
+        market_key.save()
         snapshot_time = timezone.now()
         snapshot_time = snapshot_time.replace(minute=0, second=0, microsecond=0)
 
@@ -163,7 +165,8 @@ class BribesTests(TestCase):
         self.assertEqual(VoteSnapshot.objects.count(), response.json()['count'])
 
     def test_reward_payer(self):
-        market_key = 'GBPF7NLFCYGZNHU6HS64ZGTE4YCRLAWTLFGOMFTHQ3WSUUFIGOSQFPJT'
+        market_key = MarketKey(market_key='GBPF7NLFCYGZNHU6HS64ZGTE4YCRLAWTLFGOMFTHQ3WSUUFIGOSQFPJT')
+        market_key.save()
         snapshot_time = timezone.now()
         snapshot_time = snapshot_time.replace(minute=0, second=0, microsecond=0)
 
@@ -199,6 +202,7 @@ class BribesTests(TestCase):
         VoteSnapshot.objects.bulk_create(votes)
 
         bribe = Bribe(
+            market_key=market_key,
             amount_for_bribes=100000,
             amount_aqua=config.CONVERTATION_AMOUNT,
             asset_code=self.asset_xxx.code,
@@ -225,7 +229,8 @@ class BribesTests(TestCase):
         self.assertEqual(Payout.objects.values_list('status', flat=True).distinct().first(), Payout.STATUS_SUCCESS)
 
     def test_reward_payer_with_native_asset(self):
-        market_key = 'GBPF7NLFCYGZNHU6HS64ZGTE4YCRLAWTLFGOMFTHQ3WSUUFIGOSQFPJT'
+        market_key = MarketKey(market_key='GBPF7NLFCYGZNHU6HS64ZGTE4YCRLAWTLFGOMFTHQ3WSUUFIGOSQFPJT')
+        market_key.save()
         snapshot_time = timezone.now()
         snapshot_time = snapshot_time.replace(minute=0, second=0, microsecond=0)
 
@@ -261,6 +266,7 @@ class BribesTests(TestCase):
         VoteSnapshot.objects.bulk_create(votes)
 
         bribe = Bribe(
+            market_key=market_key,
             amount_for_bribes=100000,
             amount_aqua=config.CONVERTATION_AMOUNT,
             asset_code=Asset.native().code,
