@@ -51,9 +51,10 @@ def task_aggregate_bribes(start_at=None, stop_at=None):
     if stop_at is None:
         stop_at = start_at + Bribe.DEFAULT_DURATION
 
+    aqua = Asset(code=settings.REWARD_ASSET_CODE, issuer=settings.REWARD_ASSET_ISSUER)
     active_bribes = Bribe.objects.filter(status=Bribe.STATUS_ACTIVE, start_at=start_at, stop_at=stop_at)
 
-    aggregated_by_asset = active_bribes.values(
+    aggregated_by_asset = active_bribes.exclude(asset_code=aqua.code, asset_issuer=aqua.issuer).values(
         "market_key", "asset_code", "asset_issuer", "start_at", "stop_at",
     ).annotate(
         total_reward_amount=models.Sum('amount_for_bribes')
@@ -72,12 +73,18 @@ def task_aggregate_bribes(start_at=None, stop_at=None):
             )
         )
 
+    aqua_bribes = active_bribes.filter(asset_code=aqua.code, asset_issuer=aqua.issuer).values(
+        "market_key",
+    ).annotate(
+        total_reward_amount=models.Sum('amount_for_bribes')
+    )
+    aqua_bribes = dict(aqua_bribes.values_list("market_key", "reward_sum"))
+
     aggregated_aqua_by_market = active_bribes.values(
         "market_key", "start_at", "stop_at",
     ).annotate(
         total_reward_amount=models.Sum('amount_aqua')
     )
-    aqua = Asset(code=settings.REWARD_ASSET_CODE, issuer=settings.REWARD_ASSET_ISSUER)
     for bribe in aggregated_aqua_by_market:
         aggregated_bribes.append(
             AggregatedByAssetBribe(
@@ -86,7 +93,7 @@ def task_aggregate_bribes(start_at=None, stop_at=None):
                 asset_issuer=aqua.issuer or '',
                 start_at=bribe['start_at'],
                 stop_at=bribe['stop_at'],
-                total_reward_amount=bribe['total_reward_amount'],
+                total_reward_amount=bribe['total_reward_amount'] + aqua_bribes.get('market_key', 0),
             )
         )
 
