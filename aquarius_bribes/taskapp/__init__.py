@@ -3,6 +3,7 @@ import os
 from django.conf import settings
 
 from celery import Celery
+from celery.schedules import crontab
 from datetime import timedelta
 
 if not settings.configured:
