@@ -1,12 +1,14 @@
 from django.conf import settings
+from django.db import models
 from django.utils import timezone
 
+from datetime import timedelta
 from stellar_sdk import Asset
 
 from aquarius_bribes.bribes.bribe_processor import BribeProcessor
 from aquarius_bribes.bribes.exceptions import NoPathForConversionError
 from aquarius_bribes.bribes.loader import BribesLoader
-from aquarius_bribes.bribes.models import Bribe
+from aquarius_bribes.bribes.models import AggregatedByAssetBribe, Bribe
 from aquarius_bribes.taskapp import app as celery_app
 
 
@@ -38,6 +40,57 @@ def task_claim_bribes():
             bribe.message = message
             bribe.status = Bribe.STATUS_FAILED_CLAIM
             bribe.save()
+
+
+@celery_app.task(ignore_result=True, soft_time_limit=60 * 30, time_limit=60 * 35)
+def task_aggregate_bribes(start_at=None, stop_at=None):
+    if start_at is None:
+        time = timezone.now()
+        start_at = time + timedelta(days=8 - time.isoweekday())
+        start_at = start_at.replace(hour=0, minute=0, second=0, microsecond=0)
+    if stop_at is None:
+        stop_at = start_at + Bribe.DEFAULT_DURATION
+
+    active_bribes = Bribe.objects.filter(status=Bribe.STATUS_ACTIVE, start_at=start_at, stop_at=stop_at)
+
+    aggregated_by_asset = active_bribes.values(
+        "market_key", "asset_code", "asset_issuer", "start_at", "stop_at",
+    ).annotate(
+        total_reward_amount=models.Sum('amount_for_bribes')
+    )
+
+    aggregated_bribes = []
+    for bribe in aggregated_by_asset:
+        aggregated_bribes.append(
+            AggregatedByAssetBribe(
+                market_key=bribe['market_key'],
+                asset_code=bribe['asset_code'],
+                asset_issuer=bribe['asset_issuer'],
+                start_at=bribe['start_at'],
+                stop_at=bribe['stop_at'],
+                total_reward_amount=bribe['total_reward_amount'],
+            )
+        )
+
+    aggregated_aqua_by_market = active_bribes.values(
+        "market_key", "start_at", "stop_at",
+    ).annotate(
+        total_reward_amount=models.Sum('amount_aqua')
+    )
+    aqua = Asset(code=settings.REWARD_ASSET_CODE, issuer=settings.REWARD_ASSET_ISSUER)
+    for bribe in aggregated_aqua_by_market:
+        aggregated_bribes.append(
+            AggregatedByAssetBribe(
+                market_key=bribe['market_key'],
+                asset_code=aqua.code,
+                asset_issuer=aqua.issuer or '',
+                start_at=bribe['start_at'],
+                stop_at=bribe['stop_at'],
+                total_reward_amount=bribe['total_reward_amount'],
+            )
+        )
+
+    AggregatedByAssetBribe.objects.bulk_create(aggregated_bribes)
 
 
 @celery_app.task(ignore_result=True, soft_time_limit=60 * 30, time_limit=60 * 35)

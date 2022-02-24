@@ -147,7 +147,7 @@ class BribeProcessor(object):
             return response
 
     def process_response(self, response, bribe, transaction_envelope):
-        if transaction_envelope.transaction.operations[-1] != PathPaymentStrictReceive:
+        if not isinstance(transaction_envelope.transaction.operations[-1], PathPaymentStrictReceive):
             bribe.amount_for_bribes = bribe.amount - config.CONVERTATION_AMOUNT
             bribe.amount_aqua = config.CONVERTATION_AMOUNT
             bribe.convertation_tx_hash = response['hash']

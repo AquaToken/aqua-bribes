@@ -99,3 +99,21 @@ class Bribe(models.Model):
         return Decimal(self.amount_aqua  / self.DEFAULT_DURATION.days).quantize(
             Decimal('0.0000001'), rounding=ROUND_DOWN,
         )
+
+
+class AggregatedByAssetBribe(models.Model):
+    market_key = models.CharField(max_length=56)
+
+    asset_code = models.CharField(max_length=12)
+    asset_issuer = models.CharField(max_length=56)
+
+    start_at = models.DateTimeField(null=True)
+    stop_at = models.DateTimeField(null=True)
+
+    total_reward_amount = models.DecimalField(max_digits=20, decimal_places=7, null=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return '{}...{}'.format(self.asset_issuer[:4], self.asset_issuer[-4:], self.asset_code, self.asset_issuer[-4:])
