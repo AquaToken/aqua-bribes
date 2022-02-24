@@ -1,3 +1,4 @@
+from django.db.models import Prefetch
 from django.utils import timezone
 
 from datetime import datetime
@@ -6,14 +7,14 @@ from rest_framework.generics import GenericAPIView
 from rest_framework.mixins import ListModelMixin
 from rest_framework.permissions import AllowAny
 
-from aquarius_bribes.bribes.models import AggregatedByAssetBribe, Bribe
+from aquarius_bribes.bribes.models import AggregatedByAssetBribe, Bribe, MarketKey
 from aquarius_bribes.bribes.pagination import CustomPagination
-from aquarius_bribes.bribes.serializers import AggregatedByAssetBribeSerializer
+from aquarius_bribes.bribes.serializers import MarketKeySerializer
 from aquarius_bribes.utils.filters import MultiGetFilterBackend
 
 
-class AggregatedByAssetBribeListView(ListModelMixin, GenericAPIView):
-    serializer_class = AggregatedByAssetBribeSerializer
+class MarketKeyBribeListView(ListModelMixin, GenericAPIView):
+    serializer_class = MarketKeySerializer
     permission_classes = (AllowAny, )
     pagination_class = CustomPagination
     filter_backends = (MultiGetFilterBackend, )
@@ -33,7 +34,15 @@ class AggregatedByAssetBribeListView(ListModelMixin, GenericAPIView):
         start_at = timestamp.replace(day=timestamp.day - timestamp.isoweekday() + 1)
         start_at = start_at.replace(hour=0, minute=0, second=0, microsecond=0)
         stop_at = start_at + Bribe.DEFAULT_DURATION
-        return AggregatedByAssetBribe.objects.filter(start_at=start_at, stop_at=stop_at).order_by('-created_at')
+
+        return MarketKey.objects.prefetch_related(
+            Prefetch(
+                'aggregated_bribes',
+                queryset=AggregatedByAssetBribe.objects.filter(
+                    start_at=start_at, stop_at=stop_at,
+                ),
+            ),
+        )
 
     def get(self, request, *args, **kwargs):
         return self.list(request, *args, **kwargs)
