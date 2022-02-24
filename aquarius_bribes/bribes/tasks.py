@@ -9,6 +9,7 @@ from aquarius_bribes.bribes.bribe_processor import BribeProcessor
 from aquarius_bribes.bribes.exceptions import NoPathForConversionError
 from aquarius_bribes.bribes.loader import BribesLoader
 from aquarius_bribes.bribes.models import AggregatedByAssetBribe, Bribe
+from aquarius_bribes.bribes.utils import get_horizon
 from aquarius_bribes.taskapp import app as celery_app
 
 
@@ -40,6 +41,26 @@ def task_claim_bribes():
             bribe.message = message
             bribe.status = Bribe.STATUS_FAILED_CLAIM
             bribe.save()
+
+
+@celery_app.task(ignore_result=True, soft_time_limit=60 * 15, time_limit=60 * 15)
+def task_update_bribe_aqua_equivalent():
+    now = timezone.now()
+    horizon = get_horizon()
+    aqua = Asset(code=settings.REWARD_ASSET_CODE, issuer=settings.REWARD_ASSET_ISSUER)
+
+    for bribe in AggregatedByAssetBribe.objects.filter(stop_at__gt=now):
+        if bribe.asset == aqua:
+            bribe.aqua_total_reward_amount_equivalent = bribe.total_reward_amount
+        else:
+            paths = horizon.strict_send_paths(
+                source_amount=bribe.total_reward_amount, destination=[aqua], source_asset=bribe.asset
+            ).call().get("_embedded", {}).get("records", [])
+            if len(paths) == 0:
+                bribe.aqua_total_reward_amount_equivalent = 0
+            else:
+                bribe.aqua_total_reward_amount_equivalent = paths[0]['destination_amount']
+        bribe.save()
 
 
 @celery_app.task(ignore_result=True, soft_time_limit=60 * 30, time_limit=60 * 35)

@@ -120,6 +120,8 @@ class AggregatedByAssetBribe(models.Model):
 
     total_reward_amount = models.DecimalField(max_digits=20, decimal_places=7, null=True)
 
+    aqua_total_reward_amount_equivalent = models.DecimalField(max_digits=20, decimal_places=7, null=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -134,6 +136,15 @@ class AggregatedByAssetBribe(models.Model):
     @property
     def daily_amount(self):
         return Decimal(self.total_reward_amount  / Bribe.DEFAULT_DURATION.days).quantize(
+            Decimal('0.0000001'), rounding=ROUND_DOWN,
+        )
+
+    @property
+    def daily_aqua_equivalent(self):
+        if not self.aqua_total_reward_amount_equivalent:
+            return Decimal(0)
+
+        return Decimal(self.aqua_total_reward_amount_equivalent  / Bribe.DEFAULT_DURATION.days).quantize(
             Decimal('0.0000001'), rounding=ROUND_DOWN,
         )
 
