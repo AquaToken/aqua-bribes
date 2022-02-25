@@ -1,4 +1,4 @@
-from django.db.models import Prefetch
+from django.db.models import Prefetch, Q, Sum
 from django.utils import timezone
 
 from datetime import datetime
@@ -35,7 +35,13 @@ class MarketKeyBribeListView(ListModelMixin, GenericAPIView):
         start_at = start_at.replace(hour=0, minute=0, second=0, microsecond=0)
         stop_at = start_at + Bribe.DEFAULT_DURATION
 
-        return MarketKey.objects.prefetch_related(
+        return MarketKey.objects.annotate(
+            aqua_sum=Sum(
+                'aggregated_bribes__aqua_total_reward_amount_equivalent', filter=Q(
+                    aggregated_bribes__start_at=start_at, aggregated_bribes__stop_at=stop_at
+                )
+            )
+        ).filter(aqua_sum__gt=0).order_by('-aqua_sum').prefetch_related(
             Prefetch(
                 'aggregated_bribes',
                 queryset=AggregatedByAssetBribe.objects.filter(

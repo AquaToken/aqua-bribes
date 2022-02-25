@@ -32,6 +32,7 @@ DJANGO_APPS = [
 
 THIRD_PARTY_APPS = [
     'drf_secure_token',
+    'rest_framework',
 ]
 
 LOCAL_APPS = [
