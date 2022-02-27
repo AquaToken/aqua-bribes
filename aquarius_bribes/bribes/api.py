@@ -1,7 +1,7 @@
 from django.db.models import Prefetch, Q, Sum
 from django.utils import timezone
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from rest_framework.exceptions import ParseError
 from rest_framework.generics import GenericAPIView
@@ -32,7 +32,7 @@ class MarketKeyBribeListView(ListModelMixin, GenericAPIView):
         else:
             timestamp = timezone.now()
 
-        start_at = timestamp.replace(day=timestamp.day - timestamp.isoweekday() + 1)
+        start_at = timestamp - timedelta(days=timestamp.isoweekday() - 1)
         start_at = start_at.replace(hour=0, minute=0, second=0, microsecond=0)
         stop_at = start_at + Bribe.DEFAULT_DURATION
 
