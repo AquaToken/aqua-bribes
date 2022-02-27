@@ -41,6 +41,7 @@ def task_load_votes():
 
 @celery_app.task(ignore_result=True, soft_time_limit=PAYREWARD_TIME_LIMIT.total_seconds(), time_limit=60 * 25)
 def task_pay_rewards(reward_period=DEFAULT_REWARD_PERIOD):
+    return
     stop_at = timezone.now() + PAYREWARD_TIME_LIMIT
 
     snapshot_time = timezone.now()

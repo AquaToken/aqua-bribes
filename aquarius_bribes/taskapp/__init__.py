@@ -46,6 +46,11 @@ def setup_periodic_tasks(sender, **kwargs):
         #     'schedule': crontab(hour='0', minute='0'),
         #     'args': (),
         # },
+        'aquarius_bribes.bribes.tasks.task_load_votes': {
+            'task': 'aquarius_bribes.bribes.tasks.task_load_votes',
+            'schedule': crontab(hour='0', minute='0'),
+            'args': (),
+        },
         'aquarius_bribes.bribes.tasks.task_update_bribe_aqua_equivalent': {
             'task': 'aquarius_bribes.bribes.tasks.task_update_bribe_aqua_equivalent',
             'schedule': crontab(hour='*', minute='0'),
