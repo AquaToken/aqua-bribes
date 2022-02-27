@@ -33,6 +33,7 @@ DJANGO_APPS = [
 THIRD_PARTY_APPS = [
     'drf_secure_token',
     'rest_framework',
+    'corsheaders',
 ]
 
 LOCAL_APPS = [
@@ -51,6 +52,7 @@ INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -211,3 +213,8 @@ REWARD_ASSET_ISSUER = NotImplemented
 CONSTANCE_CONFIG = {
     'CONVERTATION_AMOUNT': (Decimal('100000'), 'Amount in aqua needed for bribe accept', Decimal),
 }
+
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    r"^https://\w+\.aqua\.network$",
+    r"^https://\w+\.netlify\.app$",
+]
