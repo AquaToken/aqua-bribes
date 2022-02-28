@@ -57,8 +57,7 @@ def task_pay_rewards(reward_period=DEFAULT_REWARD_PERIOD):
     )
 
     for bribe in active_bribes:
-        votes = VoteSnapshot.objects.filter(snapshot_time=snapshot_time, market_key=bribe.market_key)
-        total_votes = votes.aggregate(total_votes=models.Sum("votes_value"))["total_votes"]
+        votes = VoteSnapshot.objects.filter(snapshot_time__date=snapshot_time.date(), market_key=bribe.market_key)
 
         reward_amount = bribe.daily_amount * Decimal(reward_period.total_seconds() / (24 * 3600))
         reward_payer = RewardPayer(bribe, reward_wallet, bribe.asset, reward_amount, stop_at=stop_at)
