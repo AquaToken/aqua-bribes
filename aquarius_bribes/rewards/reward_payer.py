@@ -83,7 +83,6 @@ class BaseRewardPayer(object):
             return
 
         transaction_envelope.sign(self.payer_wallet.secret)
-        response = self.server.submit_transaction(transaction_envelope)
 
         try:
             # response = self.server.submit_transaction(transaction_envelope)
