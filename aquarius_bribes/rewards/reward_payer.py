@@ -201,7 +201,7 @@ class RewardPayer(BaseRewardPayer):
         )
 
     def _append_payment_op(self, builder, payout):
-        if self.bribe.asset.type() == Asset.native().type:
+        if self.bribe.asset.type == Asset.native().type:
             builder.append_payment_op(
                 destination=payout.vote_snapshot.voting_account,
                 source=self.payer_wallet.public_key,
