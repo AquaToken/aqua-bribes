@@ -41,12 +41,12 @@ def setup_periodic_tasks(sender, **kwargs):
             'schedule': crontab(hour='9', minute='0', day_of_week='sunday'),
             'args': (),
         },
-        # 'aquarius_bribes.bribes.tasks.task_run_load_votes': {
+        # 'aquarius_bribes.rewards.tasks.task_run_load_votes': {
         #     'task': 'aquarius_bribes.bribes.tasks.task_run_load_votes',
         #     'schedule': crontab(hour='0', minute='0'),
         #     'args': (),
         # },
-        'aquarius_bribes.bribes.tasks.task_load_votes': {
+        'aquarius_bribes.rewards.tasks.task_load_votes': {
             'task': 'aquarius_bribes.bribes.tasks.task_load_votes',
             'schedule': crontab(hour='0', minute='0'),
             'args': (),
@@ -56,7 +56,7 @@ def setup_periodic_tasks(sender, **kwargs):
             'schedule': crontab(hour='*', minute='0'),
             'args': (),
         },
-        # 'aquarius_bribes.bribes.tasks.task_pay_rewards': {
+        # 'aquarius_bribes.rewards.tasks.task_pay_rewards': {
         #     'task': 'aquarius.amm_reward.tasks.task_pay_rewards',
         #     'schedule': crontab(hour='*', minute='35'),
         #     'args': (),
