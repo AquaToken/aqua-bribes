@@ -24,8 +24,8 @@ LOAD_VOTES_TASK_ACTIVE_TIMEOUT = timedelta(hours=2).total_seconds()
 
 @celery_app.task(ignore_result=True, soft_time_limit=60 * 20, time_limit=60 * 30)
 def task_run_load_votes():
-    hour = random.randint(0, 5)
-    task_load_votes.apply_async(countdown=2 * hour * timedelta(hours=1).total_seconds())
+    hour = random.randint(0, 4)
+    task_load_votes.apply_async(countdown=3 * hour * timedelta(hours=1).total_seconds())
 
 
 @celery_app.task(ignore_result=True, soft_time_limit=60 * 60 * 2, time_limit=60 * (60 * 2 + 5))
