@@ -87,7 +87,7 @@ class BaseRewardPayer(object):
 
         try:
             # response = self.server.submit_transaction(transaction_envelope)
-            response {
+            response = {
                 'successful': True,
                 'hash': 'test_hash'
             }
