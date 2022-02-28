@@ -10,7 +10,8 @@ from decimal import Decimal
 from stellar_sdk import Asset, Claimant, ClaimPredicate
 from stellar_sdk import Keypair, Server, TransactionBuilder
 
-from aquarius_bribes.bribes.models import Bribe, MarketKey
+from aquarius_bribes.bribes.models import AggregatedByAssetBribe, Bribe, MarketKey
+from aquarius_bribes.bribes.tasks import task_aggregate_bribes
 from aquarius_bribes.rewards.models import Payout, VoteSnapshot
 from aquarius_bribes.rewards.reward_payer import RewardPayer
 from aquarius_bribes.rewards.votes_loader import VotesLoader
@@ -201,6 +202,9 @@ class BribesTests(TestCase):
         response = self.server.submit_transaction(transaction_envelope)
         VoteSnapshot.objects.bulk_create(votes)
 
+        start_at = timezone.now()
+        stop_at = timezone.now()
+
         bribe = Bribe(
             market_key=market_key,
             amount_for_bribes=100000,
@@ -211,8 +215,12 @@ class BribesTests(TestCase):
             amount=100000,
             created_at=timezone.now(),
             updated_at=timezone.now(),
+            start_at=start_at,
+            stop_at=stop_at,
         )
         bribe.save()
+        task_aggregate_bribes(start_at, stop_at)
+        bribe = AggregatedByAssetBribe.objects.first()
 
         reward_wallet = SecuredWallet(
             public_key=settings.BRIBE_WALLET_ADDRESS,
@@ -220,7 +228,7 @@ class BribesTests(TestCase):
         )
 
         reward_period = timedelta(hours=1)
-        reward_amount = bribe.daily_bribe_amount * Decimal(reward_period.total_seconds() / (24 * 3600))
+        reward_amount = bribe.daily_amount * Decimal(reward_period.total_seconds() / (24 * 3600))
         reward_payer = RewardPayer(bribe, reward_wallet, self.reward_asset, reward_amount)
         reward_payer.pay_reward(VoteSnapshot.objects.all())
 
@@ -265,6 +273,9 @@ class BribesTests(TestCase):
         response = self.server.submit_transaction(transaction_envelope)
         VoteSnapshot.objects.bulk_create(votes)
 
+        start_at = timezone.now()
+        stop_at = timezone.now()
+
         bribe = Bribe(
             market_key=market_key,
             amount_for_bribes=100000,
@@ -275,8 +286,12 @@ class BribesTests(TestCase):
             amount=100000,
             created_at=timezone.now(),
             updated_at=timezone.now(),
+            start_at=start_at,
+            stop_at=stop_at,
         )
         bribe.save()
+        task_aggregate_bribes(start_at, stop_at)
+        bribe = AggregatedByAssetBribe.objects.first()
 
         reward_wallet = SecuredWallet(
             public_key=settings.BRIBE_WALLET_ADDRESS,
@@ -284,7 +299,7 @@ class BribesTests(TestCase):
         )
 
         reward_period = timedelta(hours=1)
-        reward_amount = bribe.daily_bribe_amount * Decimal(reward_period.total_seconds() / (24 * 3600))
+        reward_amount = bribe.daily_amount * Decimal(reward_period.total_seconds() / (24 * 3600))
         reward_payer = RewardPayer(bribe, reward_wallet, self.reward_asset, reward_amount)
         reward_payer.pay_reward(VoteSnapshot.objects.all())
 
