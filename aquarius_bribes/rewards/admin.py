@@ -16,6 +16,6 @@ class VoteSnapshotAdmin(admin.ModelAdmin):
 
 @admin.register(Payout)
 class PayoutAdmin(admin.ModelAdmin):
-    list_display = ('vote_snapshot', 'status', 'created_at', 'message', 'stellar_transaction_id')
+    list_display = ('vote_snapshot', 'bribe__market_key_id', 'status', 'created_at', 'message', 'stellar_transaction_id')
     list_filter = ('created_at', 'status')
-    search_fields = ('stellar_transaction_id', 'vote_snapshot__voting_account')
+    search_fields = ('stellar_transaction_id', 'vote_snapshot__voting_account', 'bribe__market_key_id')
