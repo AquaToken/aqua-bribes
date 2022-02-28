@@ -1,4 +1,5 @@
 from django.conf import settings
+from django.core.cache import cache
 from django.db import models
 from django.utils import timezone
 
@@ -17,16 +18,20 @@ from aquarius_bribes.taskapp import app as celery_app
 
 DEFAULT_REWARD_PERIOD = timedelta(hours=24)
 PAYREWARD_TIME_LIMIT = timedelta(minutes=20)
+LOAD_VOTES_TASK_ACTIVE_KEY = 'LOAD_VOTES_TASK_ACTIVE_KEY'
+LOAD_VOTES_TASK_ACTIVE_TIMEOUT = timedelta(hours=2).total_seconds()
 
 
 @celery_app.task(ignore_result=True, soft_time_limit=60 * 20, time_limit=60 * 30)
 def task_run_load_votes():
-    hour = random.randint(0, 11)
+    hour = random.randint(0, 5)
     task_load_votes.apply_async(countdown=2 * hour * timedelta(hours=1).total_seconds())
 
 
-@celery_app.task(ignore_result=True, soft_time_limit=60 * 30, time_limit=60 * 35)
+@celery_app.task(ignore_result=True, soft_time_limit=60 * 60 * 2, time_limit=60 * (60 * 2 + 5))
 def task_load_votes(snapshot_time=None):
+    cache.set(LOAD_VOTES_TASK_ACTIVE_KEY, True, LOAD_VOTES_TASK_ACTIVE_TIMEOUT)
+
     if snapshot_time is None:
         snapshot_time = timezone.now()
         snapshot_time = snapshot_time.replace(minute=0, second=0, microsecond=0)
@@ -40,6 +45,8 @@ def task_load_votes(snapshot_time=None):
     for market_key in markets_with_active_bribes:
         loader = VotesLoader(market_key, snapshot_time)
         loader.load_votes()
+
+    cache.set(LOAD_VOTES_TASK_ACTIVE_KEY, False, LOAD_VOTES_TASK_ACTIVE_TIMEOUT)
 
 
 @celery_app.task(ignore_result=True, soft_time_limit=60 * 30, time_limit=60 * 35)
@@ -65,6 +72,9 @@ def task_make_trustees_snapshot(snapshot_time=None):
 
 @celery_app.task(ignore_result=True, soft_time_limit=PAYREWARD_TIME_LIMIT.total_seconds(), time_limit=60 * 25)
 def task_pay_rewards(snapshot_time=None, reward_period=DEFAULT_REWARD_PERIOD):
+    if cache.get(LOAD_VOTES_TASK_ACTIVE_KEY, False):
+        return
+
     stop_at = timezone.now() + PAYREWARD_TIME_LIMIT
 
     if snapshot_time is None:
