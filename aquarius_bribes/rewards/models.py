@@ -23,7 +23,7 @@ class Payout(models.Model):
         (STATUS_FAILED, 'failed'),
     )
 
-    bribe = models.ForeignKey('bribes.Bribe', on_delete=models.PROTECT)
+    bribe = models.ForeignKey('bribes.AggregatedByAssetBribe', on_delete=models.PROTECT)
 
     vote_snapshot = models.ForeignKey(VoteSnapshot, on_delete=models.PROTECT)
 

@@ -180,7 +180,9 @@ class RewardPayer(BaseRewardPayer):
 
         qs = rewards.exclude(id__in=already_payed)
         
-        failed_by_unkown_reason = self.payout_class.objects.filter(bribe=self.bribe, vote_snapshot__in=qs).exclude(message__in=[
+        failed_by_unkown_reason = self.payout_class.objects.filter(
+            bribe=self.bribe, vote_snapshot__in=qs,
+        ).exclude(message__in=[
             'tx_bad_auth', 'tx_bad_seq', 'tx_insufficient_balance', 'tx_insufficient_fee',
         ], status=self.payout_class.STATUS_FAILED).values_list('vote_snapshot_id').distinct()
 
