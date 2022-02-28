@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from aquarius_bribes.rewards.models import Payout, VoteSnapshot
+from aquarius_bribes.rewards.models import AssetHolderBalanceSnapshot, Payout, VoteSnapshot
 
 
 @admin.register(VoteSnapshot)
@@ -23,3 +23,14 @@ class PayoutAdmin(admin.ModelAdmin):
     def get_short_market_key(self, obj):
         return '{}...{}'.format(obj.bribe.market_key_id[:8], obj.bribe.market_key_id[-8:])
     get_short_market_key.short_description = 'Market key'
+
+@admin.register(AssetHolderBalanceSnapshot)
+class AssetHolderBalanceSnapshotAdmin(admin.ModelAdmin):
+    list_display = ('asset_code', 'get_asset_issuer', 'account', 'balance', 'created_at')
+    list_filter = ('asset_code', 'created_at')
+    search_fields = ('account', 'asset_code', 'asset_issuer')
+
+    def get_asset_issuer(self, obj):
+        return '{}...{}'.format(obj.asset_issuer[:4], obj.asset_issuer[-4:])
+    get_asset_issuer.short_description = 'Asset issuer'
+    get_asset_issuer.admin_order_field = '-asset_issuer'

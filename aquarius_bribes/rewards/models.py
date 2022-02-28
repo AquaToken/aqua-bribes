@@ -46,3 +46,19 @@ class Payout(models.Model):
             self.reward_amount,
             self.vote_snapshot.voting_account,
         )
+
+
+class AssetHolderBalanceSnapshot(models.Model):
+    account = models.CharField(max_length=255)
+
+    asset_code = models.CharField(max_length=12)
+    asset_issuer = models.CharField(max_length=56)
+
+    balance = models.DecimalField(max_digits=20, decimal_places=7)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return '{0}..{1} at {2}: {3} {4}'.format(
+            self.account[:8], self.account[-8:], self.created_at.date(), self.balance, self.asset.code,
+        )
