@@ -24,9 +24,10 @@ def task_run_load_votes():
 
 
 @celery_app.task(ignore_result=True, soft_time_limit=60 * 10, time_limit=60 * 15)
-def task_load_votes():
-    snapshot_time = timezone.now()
-    snapshot_time = snapshot_time.replace(minute=0, second=0, microsecond=0)
+def task_load_votes(snapshot_time=None):
+    if snapshot_time is None:
+        snapshot_time = timezone.now()
+        snapshot_time = snapshot_time.replace(minute=0, second=0, microsecond=0)
 
     markets_with_active_bribes = AggregatedByAssetBribe.objects.filter(
         start_at__lte=snapshot_time, stop_at__gt=snapshot_time,
