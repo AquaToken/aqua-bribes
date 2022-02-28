@@ -31,7 +31,7 @@ def task_load_votes(snapshot_time=None):
         snapshot_time = timezone.now()
         snapshot_time = snapshot_time.replace(minute=0, second=0, microsecond=0)
 
-    make_trustees_snapshot()
+    task_make_trustees_snapshot()
 
     markets_with_active_bribes = AggregatedByAssetBribe.objects.filter(
         start_at__lte=snapshot_time, stop_at__gt=snapshot_time,
