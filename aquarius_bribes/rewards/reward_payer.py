@@ -7,6 +7,7 @@ from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
+from stellar_sdk import Asset
 from stellar_sdk.exceptions import BaseHorizonError, NotFoundError
 from stellar_sdk.server import Server
 from stellar_sdk.transaction_builder import TransactionBuilder, TransactionEnvelope
@@ -200,10 +201,17 @@ class RewardPayer(BaseRewardPayer):
         )
 
     def _append_payment_op(self, builder, payout):
-        builder.append_payment_op(
-            destination=payout.vote_snapshot.voting_account,
-            asset_code=payout.asset_code,
-            asset_issuer=payout.asset_issuer,
-            source=self.payer_wallet.public_key,
-            amount=payout.reward_amount,
-        )
+        if self.bribe.asset.type() == Asset.native().type:
+            builder.append_payment_op(
+                destination=payout.vote_snapshot.voting_account,
+                source=self.payer_wallet.public_key,
+                amount=payout.reward_amount,
+            )
+        else:
+            builder.append_payment_op(
+                destination=payout.vote_snapshot.voting_account,
+                asset_code=payout.asset_code,
+                asset_issuer=payout.asset_issuer,
+                source=self.payer_wallet.public_key,
+                amount=payout.reward_amount,
+            )
