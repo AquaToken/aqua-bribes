@@ -171,7 +171,7 @@ class RewardPayer(BaseRewardPayer):
 
     def _clean_rewards(self, rewards):
         already_payed = rewards.filter(
-            payout__status=self.payout_class.STATUS_SUCCESS
+            payout__status=self.payout_class.STATUS_SUCCESS, payout__bribe=self.bribe,
         ).values_list('id', flat=True)
 
         qs = rewards.exclude(id__in=already_payed)
