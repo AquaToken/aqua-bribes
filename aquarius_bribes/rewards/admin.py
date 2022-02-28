@@ -6,6 +6,8 @@ from aquarius_bribes.rewards.models import Payout, VoteSnapshot
 @admin.register(VoteSnapshot)
 class VoteSnapshotAdmin(admin.ModelAdmin):
     list_display = ('get_short_market_key', 'voting_account', 'votes_value', 'snapshot_time')
+    search_fields = ('market_key_id', 'voting_account')
+    list_filter = ('snapshot_time', )
 
     def get_short_market_key(self, obj):
         return '{}...{}'.format(obj.market_key_id[:8], obj.market_key_id[-8:])
