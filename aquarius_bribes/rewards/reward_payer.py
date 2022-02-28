@@ -85,11 +85,7 @@ class BaseRewardPayer(object):
         transaction_envelope.sign(self.payer_wallet.secret)
 
         try:
-            # response = self.server.submit_transaction(transaction_envelope)
-            response = {
-                'successful': True,
-                'hash': 'test_hash'
-            }
+            response = self.server.submit_transaction(transaction_envelope)
 
             if response.get('successful', True):
                 for payout in payouts:
