@@ -13,7 +13,7 @@ class VotesLoader(object):
     def _get_page(self, page, page_limit: int = 200):
         response = requests.get(
             '{}/api/market-keys/{}/votes/?limit={}&timestamp={}&page={}'.format(
-                self.base_url, self.market_key.market_key, page_limit, self.snapshot_time.strftime("%s"), page,
+                self.base_url, self.market_key, page_limit, self.snapshot_time.strftime("%s"), page,
             )
         )
         return response.json().get('results', [])
