@@ -23,7 +23,7 @@ class VotesLoader(object):
             snapshot_time=self.snapshot_time,
             votes_value=vote['votes_value'],
             voting_account=vote['voting_account'],
-            market_key=self.market_key,
+            market_key_id=self.market_key,
         )
 
     def load_votes(self):
