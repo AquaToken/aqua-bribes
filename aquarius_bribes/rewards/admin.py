@@ -16,6 +16,10 @@ class VoteSnapshotAdmin(admin.ModelAdmin):
 
 @admin.register(Payout)
 class PayoutAdmin(admin.ModelAdmin):
-    list_display = ('vote_snapshot', 'bribe__market_key_id', 'status', 'created_at', 'message', 'stellar_transaction_id')
+    list_display = ('vote_snapshot', 'get_short_market_key', 'status', 'created_at', 'message', 'stellar_transaction_id')
     list_filter = ('created_at', 'status')
     search_fields = ('stellar_transaction_id', 'vote_snapshot__voting_account', 'bribe__market_key_id')
+
+    def get_short_market_key(self, obj):
+        return '{}...{}'.format(obj.bribe.market_key_id[:8], obj.bribe.market_key_id[-8:])
+    get_short_market_key.short_description = 'Market key'
