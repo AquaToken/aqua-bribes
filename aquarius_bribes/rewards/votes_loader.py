@@ -1,3 +1,5 @@
+from django.db import IntegrityError
+
 import requests
 
 from aquarius_bribes.rewards.models import VoteSnapshot
@@ -26,6 +28,16 @@ class VotesLoader(object):
             market_key_id=self.market_key,
         )
 
+    def save_all_items(self, processed):
+        try:
+            VoteSnapshot.objects.bulk_create(processed, batch_size=5000)
+        except IntegrityError:
+            for item in processed:
+                try:
+                    item.save()
+                except IntegrityError:
+                    pass
+
     def load_votes(self):
         page = 1
         votes = self._get_page(page)
@@ -37,7 +49,7 @@ class VotesLoader(object):
                     self.process_vote(vote)
                 )
 
-            VoteSnapshot.objects.bulk_create(parsed_votes, batch_size=5000)
+            self.save_all_items(parsed_votes)
 
             page += 1
             votes = self._get_page(page)
