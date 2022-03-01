@@ -97,7 +97,7 @@ def task_pay_rewards(snapshot_time=None, reward_period=DEFAULT_REWARD_PERIOD):
 
         if bribe.asset.type != Asset.native().type:
             votes = votes.filter(
-                account__in=AssetHolderBalanceSnapshot.objects.filter(
+                voting_account__in=AssetHolderBalanceSnapshot.objects.filter(
                     created_at__date=snapshot_time.date(),
                     asset_code=bribe.asset_code,
                     asset_issuer=bribe.asset_issuer,
