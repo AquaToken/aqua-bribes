@@ -51,10 +51,10 @@ def setup_periodic_tasks(sender, **kwargs):
             'schedule': crontab(hour='*', minute='0'),
             'args': (),
         },
-        'aquarius_bribes.rewards.tasks.task_pay_rewards': {
-            'task': 'aquarius_bribes.rewards.tasks.task_pay_rewards',
-            'schedule': crontab(hour='*', minute='5,35'),
-            'args': (),
-        },
+        # 'aquarius_bribes.rewards.tasks.task_pay_rewards': {
+        #     'task': 'aquarius_bribes.rewards.tasks.task_pay_rewards',
+        #     'schedule': crontab(hour='*', minute='5,35'),
+        #     'args': (),
+        # },
         'drf_secure_token.tasks.delete_old_tokens': DELETE_OLD_TOKENS,
     })
