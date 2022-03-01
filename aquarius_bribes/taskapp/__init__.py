@@ -42,7 +42,7 @@ def setup_periodic_tasks(sender, **kwargs):
             'args': (),
         },
         'aquarius_bribes.rewards.tasks.task_run_load_votes': {
-            'task': 'aquarius_bribes.bribes.tasks.task_run_load_votes',
+            'task': 'aquarius_bribes.rewards.tasks.task_run_load_votes',
             'schedule': crontab(hour='0', minute='0'),
             'args': (),
         },
@@ -52,7 +52,7 @@ def setup_periodic_tasks(sender, **kwargs):
             'args': (),
         },
         'aquarius_bribes.rewards.tasks.task_pay_rewards': {
-            'task': 'aquarius.amm_reward.tasks.task_pay_rewards',
+            'task': 'aquarius_bribes.rewards.tasks.task_pay_rewards',
             'schedule': crontab(hour='*', minute='5,35'),
             'args': (),
         },
