@@ -7,12 +7,15 @@ class VoteSnapshot(models.Model):
     votes_value = models.DecimalField(max_digits=20, decimal_places=7)
     voting_account = models.CharField(max_length=56)
 
-    snapshot_time = models.DateTimeField()
+    snapshot_time = models.DateField()
 
     def __str__(self):
         return 'VoteSnapshot: {}..{} ({})'.format(
             self.voting_account[:4], self.voting_account[-4:], self.snapshot_time,
         )
+
+    class Meta:
+        unique_together = ('snapshot_time', 'market_key', 'voting_account')
 
 
 class Payout(models.Model):

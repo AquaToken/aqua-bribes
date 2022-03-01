@@ -94,7 +94,7 @@ def task_pay_rewards(snapshot_time=None, reward_period=DEFAULT_REWARD_PERIOD):
 
     for bribe in active_bribes:
         votes = VoteSnapshot.objects.filter(
-             snapshot_time__date=snapshot_time.date(), market_key=bribe.market_key,
+             snapshot_time=snapshot_time.date(), market_key=bribe.market_key,
         )
 
         if bribe.asset.type != Asset.native().type:
