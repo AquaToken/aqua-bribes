@@ -3,6 +3,8 @@ from django.core.cache import cache
 from django.db import models
 from django.utils import timezone
 
+import random
+
 from datetime import timedelta
 from decimal import Decimal, ROUND_UP
 from stellar_sdk import Asset
@@ -25,7 +27,7 @@ LOAD_VOTES_TASK_ACTIVE_TIMEOUT = timedelta(hours=2).total_seconds()
 @celery_app.task(ignore_result=True, soft_time_limit=60 * 20, time_limit=60 * 30)
 def task_run_load_votes():
     hour = random.randint(0, 4)
-    task_load_votes.apply_async(countdown=3 * hour * timedelta(hours=1).total_seconds())
+    task_load_votes.apply_async(countdown=int(3 * hour * timedelta(hours=1).total_seconds()))
 
 
 @celery_app.task(ignore_result=True, soft_time_limit=60 * 60 * 2, time_limit=60 * (60 * 2 + 5))
