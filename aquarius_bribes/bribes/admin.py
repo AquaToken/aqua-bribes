@@ -15,7 +15,7 @@ class BribeAdmin(admin.ModelAdmin):
         'claimable_balance_id', 'paging_token', 'unlock_time', 'start_at',
         'stop_at', 'created_at', 'loaded_at', 'updated_at',
     ]
-    search_fields = ['market_key_id', 'claimable_balance_id', 'sponsor',]
+    search_fields = ['market_key__market_key', 'claimable_balance_id', 'sponsor',]
     ordering = ['-loaded_at',]
 
     def get_short_market_key(self, obj):
