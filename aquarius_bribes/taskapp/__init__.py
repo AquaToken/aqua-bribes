@@ -28,7 +28,7 @@ def setup_periodic_tasks(sender, **kwargs):
         },
         'aquarius_bribes.bribes.tasks.task_update_pending_bribe_aqua_equivalent': {
             'task': 'aquarius_bribes.bribes.tasks.task_update_pending_bribe_aqua_equivalent',
-            'schedule': crontab(minute='10'),
+            'schedule': crontab(minute='*/10'),
             'args': (),
         },
         'aquarius_bribes.bribes.tasks.task_update_pending_bribe_period': {
