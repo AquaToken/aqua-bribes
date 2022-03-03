@@ -48,18 +48,10 @@ def task_update_bribe_aqua_equivalent():
     now = timezone.now()
     horizon = get_horizon()
     aqua = Asset(code=settings.REWARD_ASSET_CODE, issuer=settings.REWARD_ASSET_ISSUER)
+    loader = BribesLoader(settings.BRIBE_WALLET_ADDRESS, settings.BRIBE_WALLET_SIGNER)
 
     for bribe in AggregatedByAssetBribe.objects.filter(stop_at__gt=now):
-        if bribe.asset == aqua:
-            bribe.aqua_total_reward_amount_equivalent = bribe.total_reward_amount
-        else:
-            paths = horizon.strict_send_paths(
-                source_amount=bribe.total_reward_amount, destination=[aqua], source_asset=bribe.asset
-            ).call().get("_embedded", {}).get("records", [])
-            if len(paths) == 0:
-                bribe.aqua_total_reward_amount_equivalent = 0
-            else:
-                bribe.aqua_total_reward_amount_equivalent = paths[0]['destination_amount']
+        bribe.aqua_total_reward_amount_equivalent = loader._get_asset_equivalent(bribe.amount, bribe.asset, aqua)
         bribe.save()
 
 
@@ -68,18 +60,10 @@ def task_update_pending_bribe_aqua_equivalent():
     now = timezone.now()
     horizon = get_horizon()
     aqua = Asset(code=settings.REWARD_ASSET_CODE, issuer=settings.REWARD_ASSET_ISSUER)
+    loader = BribesLoader(settings.BRIBE_WALLET_ADDRESS, settings.BRIBE_WALLET_SIGNER)
 
     for bribe in Bribe.objects.filter(status=Bribe.STATUS_PENDING).order_by('-updated_at'):
-        if bribe.asset == aqua:
-            bribe.aqua_total_reward_amount_equivalent = bribe.amount
-        else:
-            paths = horizon.strict_send_paths(
-                source_amount=bribe.amount, destination=[aqua], source_asset=bribe.asset
-            ).call().get("_embedded", {}).get("records", [])
-            if len(paths) == 0:
-                bribe.aqua_total_reward_amount_equivalent = 0
-            else:
-                bribe.aqua_total_reward_amount_equivalent = paths[0]['destination_amount']
+        bribe.aqua_total_reward_amount_equivalent = loader._get_asset_equivalent(bribe.amount, bribe.asset, aqua)
         bribe.save()
 
 

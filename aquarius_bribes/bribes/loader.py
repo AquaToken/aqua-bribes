@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.core.cache import cache
 
 from datetime import timedelta
@@ -55,6 +56,19 @@ class BribesLoader(object):
     def _parse_bribe_predicate(self, predicate: dict):
         return predicate.get('not', {}).get('abs_before', None)
 
+    def _get_asset_equivalent(self, amount, asset, to_asset):
+        if asset == to_asset:
+            return amount
+
+        paths = horizon.strict_send_paths(
+            source_amount=amount, destination=[to_asset], source_asset=asset
+        ).call().get("_embedded", {}).get("records", [])
+
+        if len(paths) == 0:
+            return 0
+        else:
+            return paths[0]['destination_amount']
+
     def parse(self, bribe):
         amount = bribe['amount']
         sponsor = bribe['sponsor']
@@ -106,6 +120,7 @@ class BribesLoader(object):
             status = Bribe.STATUS_INVALID
 
         market_key, _ = MarketKey.objects.get_or_create(market_key=market_key_claim['destination'])
+        aqua = Asset(code=settings.REWARD_ASSET_CODE, issuer=settings.REWARD_ASSET_ISSUER)
 
         bribe = Bribe(
             asset_code=asset.code,
@@ -118,7 +133,8 @@ class BribesLoader(object):
             created_at=balance_created_at,
             unlock_time=unlock_time,
             status=status,
-            message='\n'.join(messages)
+            message='\n'.join(messages),
+            aqua_total_reward_amount_equivalent=self._get_asset_equivalent(amount, asset, aqua),
         )
 
         bribe.update_active_period()
