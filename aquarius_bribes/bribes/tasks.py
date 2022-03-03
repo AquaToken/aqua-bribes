@@ -67,6 +67,16 @@ def task_update_pending_bribe_aqua_equivalent():
         bribe.save()
 
 
+@celery_app.task(ignore_result=True, soft_time_limit=60 * 7, time_limit=60 * 10)
+def task_update_pending_bribe_period():
+    now = timezone.now()
+
+    Bribe.objects.filter(status=Bribe.STATUS_PENDING).filter(start_at__lt=now).update(
+        start_at=models.F('start_at') + timedelta(days=7),
+        stop_at=models.F('stop_at') + timedelta(days=7),
+    )
+
+
 @celery_app.task(ignore_result=True, soft_time_limit=60 * 30, time_limit=60 * 35)
 def task_aggregate_bribes(start_at=None, stop_at=None):
     if start_at is None:
