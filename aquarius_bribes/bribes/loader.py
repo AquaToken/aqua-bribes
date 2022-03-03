@@ -60,7 +60,7 @@ class BribesLoader(object):
         if asset == to_asset:
             return amount
 
-        paths = horizon.strict_send_paths(
+        paths = self.horizon.strict_send_paths(
             source_amount=amount, destination=[to_asset], source_asset=asset
         ).call().get("_embedded", {}).get("records", [])
 
