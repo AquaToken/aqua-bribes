@@ -63,6 +63,26 @@ def task_update_bribe_aqua_equivalent():
         bribe.save()
 
 
+@celery_app.task(ignore_result=True, soft_time_limit=60 * 7, time_limit=60 * 10)
+def task_update_pending_bribe_aqua_equivalent():
+    now = timezone.now()
+    horizon = get_horizon()
+    aqua = Asset(code=settings.REWARD_ASSET_CODE, issuer=settings.REWARD_ASSET_ISSUER)
+
+    for bribe in Bribe.objects.filter(status=Bribe.STATUS_PENDING).order_by('-updated_at'):
+        if bribe.asset == aqua:
+            bribe.aqua_total_reward_amount_equivalent = bribe.amount
+        else:
+            paths = horizon.strict_send_paths(
+                source_amount=bribe.amount, destination=[aqua], source_asset=bribe.asset
+            ).call().get("_embedded", {}).get("records", [])
+            if len(paths) == 0:
+                bribe.aqua_total_reward_amount_equivalent = 0
+            else:
+                bribe.aqua_total_reward_amount_equivalent = paths[0]['destination_amount']
+        bribe.save()
+
+
 @celery_app.task(ignore_result=True, soft_time_limit=60 * 30, time_limit=60 * 35)
 def task_aggregate_bribes(start_at=None, stop_at=None):
     if start_at is None:

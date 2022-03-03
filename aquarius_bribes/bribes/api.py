@@ -2,6 +2,7 @@ from django.db.models import Prefetch, Q, Sum
 from django.utils import timezone
 
 from datetime import datetime, timedelta
+from django_filters.rest_framework import DjangoFilterBackend
 
 from rest_framework.exceptions import ParseError
 from rest_framework.generics import GenericAPIView
@@ -9,8 +10,9 @@ from rest_framework.mixins import ListModelMixin
 from rest_framework.permissions import AllowAny
 
 from aquarius_bribes.bribes.models import AggregatedByAssetBribe, Bribe, MarketKey
+from aquarius_bribes.bribes.filters import BribeFilter
 from aquarius_bribes.bribes.pagination import CustomPagination
-from aquarius_bribes.bribes.serializers import MarketKeySerializer
+from aquarius_bribes.bribes.serializers import BribeSerializer, MarketKeySerializer
 from aquarius_bribes.utils.filters import MultiGetFilterBackend
 
 
@@ -50,6 +52,20 @@ class MarketKeyBribeListView(ListModelMixin, GenericAPIView):
                 ),
             ),
         )
+
+    def get(self, request, *args, **kwargs):
+        return self.list(request, *args, **kwargs)
+
+
+class PendingBribeListView(ListModelMixin, GenericAPIView):
+    serializer_class = BribeSerializer
+    permission_classes = (AllowAny, )
+    pagination_class = CustomPagination
+    filter_backends = (DjangoFilterBackend, )
+    filterset_class = BribeFilter
+
+    def get_queryset(self):
+        return Bribe.objects.filter(status=Bribe.STATUS_PENDING)
 
     def get(self, request, *args, **kwargs):
         return self.list(request, *args, **kwargs)

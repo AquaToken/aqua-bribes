@@ -44,6 +44,8 @@ class Bribe(models.Model):
     sponsor = models.CharField(max_length=56)
     amount = models.DecimalField(max_digits=20, decimal_places=7)
 
+    aqua_total_reward_amount_equivalent = models.DecimalField(max_digits=20, decimal_places=7, null=True)
+
     asset_code = models.CharField(max_length=12)
     asset_issuer = models.CharField(max_length=56)
 

@@ -34,6 +34,7 @@ THIRD_PARTY_APPS = [
     'drf_secure_token',
     'rest_framework',
     'corsheaders',
+    'django_filters',
 ]
 
 LOCAL_APPS = [

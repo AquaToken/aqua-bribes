@@ -49,6 +49,7 @@ stellar-sdk = ">=5.0.0,<6.0"
 django-constance = "*"
 django-redis = "*"
 django-cors-headers = "*"
+django-filter = "*"
 
 [requires]
 python_version = "3.8"
