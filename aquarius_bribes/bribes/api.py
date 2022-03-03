@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from django_filters.rest_framework import DjangoFilterBackend
 
 from rest_framework.exceptions import ParseError
+from rest_framework.filters import OrderingFilter
 from rest_framework.generics import GenericAPIView
 from rest_framework.mixins import ListModelMixin
 from rest_framework.permissions import AllowAny
@@ -61,8 +62,11 @@ class PendingBribeListView(ListModelMixin, GenericAPIView):
     serializer_class = BribeSerializer
     permission_classes = (AllowAny, )
     pagination_class = CustomPagination
-    filter_backends = (DjangoFilterBackend, )
+    filter_backends = (DjangoFilterBackend, OrderingFilter,)
     filterset_class = BribeFilter
+    ordering_fields = (
+        'start_at', 'stop_at', 'unlock_time', 'market_key', 'amount', 'aqua_total_reward_amount_equivalent',
+    )
 
     def get_queryset(self):
         return Bribe.objects.filter(status=Bribe.STATUS_PENDING)
