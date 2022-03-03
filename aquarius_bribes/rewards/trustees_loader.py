@@ -54,10 +54,11 @@ class TrusteesLoader(object):
                 for account in accounts_page:
                     processed_accounts.append(self._process_account(account))
 
-                AssetHolderBalanceSnapshot.objects.bulk_create(processed_accounts)
                 self.save_last_event_id(processed_accounts[-1].account)
 
             accounts_page = self._get_page()
+
+        AssetHolderBalanceSnapshot.objects.bulk_create(processed_accounts, batch_size=5000)
 
     def _process_account(self, account: Dict) -> AssetHolderBalanceSnapshot:
         balance = next(
