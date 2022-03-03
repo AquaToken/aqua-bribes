@@ -31,5 +31,5 @@ class AggregatedByAssetBribeAdmin(admin.ModelAdmin):
     readonly_fields = [
         'asset_code', 'asset_issuer', 'market_key_id', 'start_at', 'stop_at', 'created_at', 'updated_at',
     ]
-    search_fields = ['market_key_id',]
+    search_fields = ['market_key__market_key',]
     ordering = ['-created_at',]
