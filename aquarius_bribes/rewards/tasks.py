@@ -21,7 +21,6 @@ from aquarius_bribes.taskapp import app as celery_app
 DEFAULT_REWARD_PERIOD = timedelta(hours=24)
 PAYREWARD_TIME_LIMIT = timedelta(minutes=20)
 LOAD_VOTES_TASK_ACTIVE_KEY = 'LOAD_VOTES_TASK_ACTIVE_KEY'
-LOAD_VOTES_TASK_ACTIVE_TIMEOUT = timedelta(hours=2).total_seconds()
 
 
 @celery_app.task(ignore_result=True, soft_time_limit=60 * 20, time_limit=60 * 30)
@@ -32,7 +31,7 @@ def task_run_load_votes():
 
 @celery_app.task(ignore_result=True, soft_time_limit=60 * 60 * 2, time_limit=60 * (60 * 2 + 5))
 def task_load_votes(snapshot_time=None):
-    cache.set(LOAD_VOTES_TASK_ACTIVE_KEY, True, LOAD_VOTES_TASK_ACTIVE_TIMEOUT)
+    cache.set(LOAD_VOTES_TASK_ACTIVE_KEY, True, None)
 
     if snapshot_time is None:
         snapshot_time = timezone.now()
@@ -48,7 +47,7 @@ def task_load_votes(snapshot_time=None):
         loader = VotesLoader(market_key, snapshot_time)
         loader.load_votes()
 
-    cache.set(LOAD_VOTES_TASK_ACTIVE_KEY, False, LOAD_VOTES_TASK_ACTIVE_TIMEOUT)
+    cache.set(LOAD_VOTES_TASK_ACTIVE_KEY, False, None)
 
 
 @celery_app.task(ignore_result=True, soft_time_limit=60 * 30, time_limit=60 * 35)
