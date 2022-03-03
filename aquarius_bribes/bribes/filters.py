@@ -11,4 +11,5 @@ class BribeFilter(FilterSet):
             'stop_at': ['lt', 'gt'],
             'asset_code': ['exact', ],
             'asset_issuer': ['exact', 'isnull'],
+            'aqua_total_reward_amount_equivalent': ['lt', 'gt'],
         }
