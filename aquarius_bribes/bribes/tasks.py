@@ -51,7 +51,9 @@ def task_update_bribe_aqua_equivalent():
     loader = BribesLoader(settings.BRIBE_WALLET_ADDRESS, settings.BRIBE_WALLET_SIGNER)
 
     for bribe in AggregatedByAssetBribe.objects.filter(stop_at__gt=now):
-        bribe.aqua_total_reward_amount_equivalent = loader._get_asset_equivalent(bribe.amount, bribe.asset, aqua)
+        bribe.aqua_total_reward_amount_equivalent = loader._get_asset_equivalent(
+            bribe.total_reward_amount, bribe.asset, aqua,
+        )
         bribe.save()
 
 
