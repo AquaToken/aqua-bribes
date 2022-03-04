@@ -170,12 +170,8 @@ class RewardPayer(BaseRewardPayer):
     payout_class = Payout
 
     def _clean_rewards(self, rewards):
-        already_payed = rewards.filter(
-            payout__status=self.payout_class.STATUS_SUCCESS, payout__bribe=self.bribe,
-        ).values_list('id', flat=True)
+        qs = rewards
 
-        qs = rewards.exclude(id__in=already_payed)
-        
         failed_by_unkown_reason = self.payout_class.objects.filter(
             bribe=self.bribe, vote_snapshot__in=qs,
         ).exclude(message__in=[
@@ -183,6 +179,13 @@ class RewardPayer(BaseRewardPayer):
         ], status=self.payout_class.STATUS_FAILED).values_list('vote_snapshot_id').distinct()
 
         qs = qs.exclude(id__in=failed_by_unkown_reason)
+
+        already_payed = rewards.filter(
+            payout__status=self.payout_class.STATUS_SUCCESS, payout__bribe=self.bribe,
+        ).values_list('id', flat=True)
+
+        qs = rewards.exclude(id__in=already_payed)
+
         return qs
 
     def _get_memo(self):
