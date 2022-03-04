@@ -47,10 +47,9 @@ class TrusteesLoader(object):
 
     def make_balances_spanshot(self):
         accounts_page = self._get_page()
+        processed_accounts = []
         while accounts_page or accounts_page is None:
             if accounts_page is not None:
-                processed_accounts = []
-
                 for account in accounts_page:
                     processed_accounts.append(self._process_account(account))
 
