@@ -28,11 +28,11 @@ class BaseRewardPayer(object):
         self.stop_at = stop_at
         self.reward_amount = reward_amount
 
-    def _clean_rewards(self, rewards):
+    def _clean_rewards(self, votes):
         raise NotImplementedError()
 
-    def _get_reward_page(self, rewards):
-        qs = self._clean_rewards(rewards)
+    def _get_reward_page(self, votes):
+        qs = self._clean_rewards(votes)
         return list(qs[:100])
 
     def _get_memo(self):
@@ -128,8 +128,8 @@ class BaseRewardPayer(object):
                 payout.message = str(unknown_exc)
             self.payout_class.objects.bulk_create(payouts)
 
-    def _clean_failed_payouts(self, rewards):
-        timeouted_transactions = rewards.filter(
+    def _clean_failed_payouts(self, votes):
+        timeouted_transactions = votes.filter(
             payout__stellar_transaction_id__isnull=False
         ).filter(
             payout__message='timeout'
@@ -169,8 +169,8 @@ class BaseRewardPayer(object):
 class RewardPayer(BaseRewardPayer):
     payout_class = Payout
 
-    def _clean_rewards(self, rewards):
-        qs = rewards
+    def _clean_rewards(self, votes):
+        qs = votes
 
         failed_by_unkown_reason = self.payout_class.objects.filter(
             bribe=self.bribe, vote_snapshot__in=qs,
@@ -180,11 +180,11 @@ class RewardPayer(BaseRewardPayer):
 
         qs = qs.exclude(id__in=failed_by_unkown_reason)
 
-        already_payed = rewards.filter(
+        already_payed = votes.filter(
             payout__status=self.payout_class.STATUS_SUCCESS, payout__bribe=self.bribe,
         ).values_list('id', flat=True)
 
-        qs = rewards.exclude(id__in=already_payed)
+        qs = votes.exclude(id__in=already_payed)
 
         return qs
 
