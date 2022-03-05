@@ -73,8 +73,6 @@ def task_make_trustees_snapshot(snapshot_time=None):
 
 @celery_app.task(ignore_result=True, soft_time_limit=PAYREWARD_TIME_LIMIT.total_seconds(), time_limit=60 * 25)
 def task_pay_rewards(snapshot_time=None, reward_period=DEFAULT_REWARD_PERIOD):
-    return
-
     if cache.get(LOAD_VOTES_TASK_ACTIVE_KEY, False):
         return
 
