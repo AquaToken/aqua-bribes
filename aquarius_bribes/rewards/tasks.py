@@ -25,8 +25,8 @@ LOAD_VOTES_TASK_ACTIVE_KEY = 'LOAD_VOTES_TASK_ACTIVE_KEY'
 
 @celery_app.task(ignore_result=True, soft_time_limit=60 * 20, time_limit=60 * 30)
 def task_run_load_votes():
-    hour = random.randint(0, 4)
-    task_load_votes.apply_async(countdown=int(3 * hour * timedelta(hours=1).total_seconds()))
+    hour = random.randint(0, 12)
+    task_load_votes.apply_async(countdown=int(hour * timedelta(hours=1).total_seconds()))
 
 
 @celery_app.task(ignore_result=True, soft_time_limit=60 * 60 * 2, time_limit=60 * (60 * 2 + 5))
@@ -73,6 +73,8 @@ def task_make_trustees_snapshot(snapshot_time=None):
 
 @celery_app.task(ignore_result=True, soft_time_limit=PAYREWARD_TIME_LIMIT.total_seconds(), time_limit=60 * 25)
 def task_pay_rewards(snapshot_time=None, reward_period=DEFAULT_REWARD_PERIOD):
+    return
+
     if cache.get(LOAD_VOTES_TASK_ACTIVE_KEY, False):
         return
 
