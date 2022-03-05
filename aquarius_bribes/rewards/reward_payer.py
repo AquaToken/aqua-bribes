@@ -1,6 +1,6 @@
 from billiard.exceptions import SoftTimeLimitExceeded
 from datetime import timedelta
-from decimal import Decimal, ROUND_DOWN
+from decimal import Decimal, ROUND_DOWN, ROUND_UP
 from typing import List
 
 from django.conf import settings
@@ -28,11 +28,11 @@ class BaseRewardPayer(object):
         self.stop_at = stop_at
         self.reward_amount = reward_amount
 
-    def _clean_rewards(self, votes):
+    def _clean_rewards(self, rewards):
         raise NotImplementedError()
 
-    def _get_reward_page(self, votes):
-        qs = self._clean_rewards(votes)
+    def _get_reward_page(self, rewards):
+        qs = self._clean_rewards(rewards)
         return list(qs[:100])
 
     def _get_memo(self):
@@ -128,8 +128,8 @@ class BaseRewardPayer(object):
                 payout.message = str(unknown_exc)
             self.payout_class.objects.bulk_create(payouts)
 
-    def _clean_failed_payouts(self, votes):
-        timeouted_transactions = votes.filter(
+    def _clean_failed_payouts(self, rewards):
+        timeouted_transactions = rewards.filter(
             payout__stellar_transaction_id__isnull=False
         ).filter(
             payout__message='timeout'
@@ -152,10 +152,18 @@ class BaseRewardPayer(object):
             except NotFoundError:
                 self.payout_class.objects.filter(stellar_transaction_id=tx_hash).delete()
 
+    def _exclude_small_votes(self, votes, total_votes):
+        min_votes_value = Decimal(Decimal("0.0000001") * total_votes / self.reward_amount).quantize(
+            Decimal('0.0000001'), rounding=ROUND_UP,
+        )
+        return votes.filter(votes_value__gte=min_votes_value)
+
     def pay_reward(self, votes):
         self._clean_failed_payouts(votes)
 
         total_votes = votes.aggregate(total_votes=models.Sum('votes_value'))['total_votes']
+
+        votes = self._exclude_small_votes(votes, total_votes)
 
         page = self._get_reward_page(votes)
         while page:
@@ -169,9 +177,13 @@ class BaseRewardPayer(object):
 class RewardPayer(BaseRewardPayer):
     payout_class = Payout
 
-    def _clean_rewards(self, votes):
-        qs = votes
+    def _clean_rewards(self, rewards):
+        already_payed = rewards.filter(
+            payout__status=self.payout_class.STATUS_SUCCESS, payout__bribe=self.bribe,
+        ).values_list('id', flat=True)
 
+        qs = rewards.exclude(id__in=already_payed)
+        
         failed_by_unkown_reason = self.payout_class.objects.filter(
             bribe=self.bribe, vote_snapshot__in=qs,
         ).exclude(message__in=[
@@ -179,13 +191,6 @@ class RewardPayer(BaseRewardPayer):
         ], status=self.payout_class.STATUS_FAILED).values_list('vote_snapshot_id').distinct()
 
         qs = qs.exclude(id__in=failed_by_unkown_reason)
-
-        already_payed = votes.filter(
-            payout__status=self.payout_class.STATUS_SUCCESS, payout__bribe=self.bribe,
-        ).values_list('id', flat=True)
-
-        qs = votes.exclude(id__in=already_payed)
-
         return qs
 
     def _get_memo(self):
