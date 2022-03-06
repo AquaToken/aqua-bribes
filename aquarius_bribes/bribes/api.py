@@ -69,7 +69,7 @@ class PendingBribeListView(ListModelMixin, GenericAPIView):
     )
 
     def get_queryset(self):
-        return Bribe.objects.filter(status=Bribe.STATUS_PENDING)
+        return Bribe.objects.filter(Q(status=Bribe.STATUS_PENDING) | Q(status=Bribe.STATUS_ACTIVE, start_at__gt=timezone.now()))
 
     def get(self, request, *args, **kwargs):
         return self.list(request, *args, **kwargs)
