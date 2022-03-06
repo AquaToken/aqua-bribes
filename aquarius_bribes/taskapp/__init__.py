@@ -23,7 +23,7 @@ def setup_periodic_tasks(sender, **kwargs):
     app.conf.beat_schedule.update({
         'aquarius_bribes.bribes.tasks.task_load_bribes': {
             'task': 'aquarius_bribes.bribes.tasks.task_load_bribes',
-            'schedule': crontab(hour='*', minute='0'),
+            'schedule': crontab(hour='*', minute='*/5'),
             'args': (),
         },
         'aquarius_bribes.bribes.tasks.task_update_pending_bribe_aqua_equivalent': {
