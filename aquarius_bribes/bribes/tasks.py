@@ -21,7 +21,7 @@ def task_load_bribes():
 
 @celery_app.task(ignore_result=True, soft_time_limit=60 * 30, time_limit=60 * 35)
 def task_claim_bribes():
-    ready_to_claim = Bribe.objects.filter(unlock_time__lte=timezone.now())
+    ready_to_claim = Bribe.objects.filter(unlock_time__lte=timezone.now(), status=Bribe.STATUS_PENDING)
     
     aqua = Asset(code=settings.REWARD_ASSET_CODE, issuer=settings.REWARD_ASSET_ISSUER)
     bribe_processor = BribeProcessor(settings.BRIBE_WALLET_ADDRESS, settings.BRIBE_WALLET_SIGNER, aqua)
