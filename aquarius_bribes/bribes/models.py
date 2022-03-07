@@ -24,6 +24,7 @@ class Bribe(models.Model):
     STATUS_FAILED_CLAIM = 5
     STATUS_NO_PATH_FOR_CONVERSION = 6
     STATUS_FAILED_RETURN = 7
+    STATUS_FINISHED = 8
 
     STATUS_CHOICES = (
         (STATUS_PENDING, 'Pending unlock time'),
@@ -34,6 +35,7 @@ class Bribe(models.Model):
         (STATUS_FAILED_CLAIM, 'Failed claim'),
         (STATUS_NO_PATH_FOR_CONVERSION, 'Conversion failed'),
         (STATUS_FAILED_RETURN, 'Failed return'),
+        (STATUS_FINISHED, 'Finished'),
     )
 
     status = models.IntegerField(choices=STATUS_CHOICES)
