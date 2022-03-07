@@ -36,6 +36,11 @@ def setup_periodic_tasks(sender, **kwargs):
             'schedule': crontab(hour='0', minute='0', day_of_week='monday'),
             'args': (),
         },
+        'aquarius_bribes.bribes.tasks.task_stop_active_bribes': {
+            'task': 'aquarius_bribes.bribes.tasks.task_stop_active_bribes',
+            'schedule': crontab(hour='0', minute='0', day_of_week='monday'),
+            'args': (),
+        },
         'aquarius_bribes.bribes.tasks.task_return_bribes': {
             'task': 'aquarius_bribes.bribes.tasks.task_return_bribes',
             'schedule': crontab(hour='9', minute='0', day_of_week='sunday'),
