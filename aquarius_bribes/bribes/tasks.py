@@ -4,6 +4,7 @@ from django.utils import timezone
 
 from datetime import timedelta
 from stellar_sdk import Asset
+from stellar_sdk.exceptions import BaseHorizonError
 
 from aquarius_bribes.bribes.bribe_processor import BribeProcessor
 from aquarius_bribes.bribes.exceptions import NoPathForConversionError
@@ -26,21 +27,34 @@ def task_claim_bribes():
     aqua = Asset(code=settings.REWARD_ASSET_CODE, issuer=settings.REWARD_ASSET_ISSUER)
     bribe_processor = BribeProcessor(settings.BRIBE_WALLET_ADDRESS, settings.BRIBE_WALLET_SIGNER, aqua)
 
-    for bribe in ready_to_claim:
-        try:
-            response = bribe_processor.claim_and_convert(bribe)
-            bribe.update_active_period(timezone.now())
-            bribe.status = Bribe.STATUS_ACTIVE
-            bribe.save()
-        except NoPathForConversionError:
-            bribe.status = Bribe.STATUS_NO_PATH_FOR_CONVERSION
-            bribe.save()
-        except Exception as e:
-            message = bribe.message or ''
-            message += '\n' + str(e)
-            bribe.message = message
-            bribe.status = Bribe.STATUS_FAILED_CLAIM
-            bribe.save()
+    while ready_to_claim.count() > 0:
+        for bribe in ready_to_claim:
+            try:
+                response = bribe_processor.claim_and_convert(bribe)
+                bribe.update_active_period(timezone.now())
+                bribe.status = Bribe.STATUS_ACTIVE
+                bribe.save()
+            except NoPathForConversionError:
+                bribe.status = Bribe.STATUS_NO_PATH_FOR_CONVERSION
+                bribe.save()
+            except BaseHorizonError as submit_exc:
+                transaction_fail_reason = submit_exc.extras.get('result_codes', {}).get('transaction', 'no_reason')
+                safe_fail_reasons = [
+                    'tx_bad_seq',
+                    'tx_bad_auth',
+                ]
+                if transaction_fail_reason not in safe_fail_reasons:
+                    message = bribe.message or ''
+                    message += '\n' + str(e)
+                    bribe.message = message
+                    bribe.status = Bribe.STATUS_FAILED_CLAIM
+                    bribe.save()
+            except Exception as e:
+                message = bribe.message or ''
+                message += '\n' + str(e)
+                bribe.message = message
+                bribe.status = Bribe.STATUS_FAILED_CLAIM
+                bribe.save()
 
 
 @celery_app.task(ignore_result=True, soft_time_limit=60 * 15, time_limit=60 * 15)

@@ -3,11 +3,12 @@ from django.test import TestCase, override_settings
 from django.utils import timezone
 
 import requests
+from unittest.mock import MagicMock, patch
 
 from constance import config
 from datetime import timedelta
 from decimal import Decimal
-from stellar_sdk import Asset, Claimant, ClaimPredicate
+from stellar_sdk import Account, Asset, Claimant, ClaimPredicate
 from stellar_sdk import Keypair, Server, TransactionBuilder
 
 from aquarius_bribes.bribes.loader import BribesLoader
@@ -451,3 +452,52 @@ class BribesTests(TestCase):
         self.assertEqual(Bribe.objects.first().status, Bribe.STATUS_ACTIVE)
         self.assertEqual(Bribe.objects.first().amount_for_bribes, Decimal('96.9696969'))
         self.assertEqual(Bribe.objects.first().amount_aqua, config.CONVERTATION_AMOUNT)
+
+    def test_bribe_claim_bad_seq(self):
+        loader = BribesLoader(self.bribe_wallet.public_key, self.bribe_wallet.secret)
+        loader.load_bribes()
+
+        builder = self._get_builder(self.account_1)
+
+        claim_after = timezone.now() + timedelta(microseconds=1)
+        claim_after_timestamp = int(claim_after.strftime("%s"))
+        claimants = [
+            Claimant(
+                destination=self.bribe_wallet.public_key,
+                predicate=ClaimPredicate.predicate_not(
+                    ClaimPredicate.predicate_before_absolute_time(claim_after_timestamp)
+                ),
+            ),
+            Claimant(
+                destination=self.default_market_key.public_key,
+                predicate=ClaimPredicate.predicate_not(ClaimPredicate.predicate_unconditional()),
+            )
+        ]
+        builder = self._trust_asset(self.account_1, self.reward_asset, builder=builder)
+        builder = self._payment(random_asset_issuer, self.account_1, self.reward_asset, amount=10000, builder=builder)
+        builder = self._send_claim(self.account_1, claimants, self.reward_asset, amount=100, builder=builder)
+        transaction_envelope = builder.build()
+        transaction_envelope.sign(self.account_1.secret)
+        transaction_envelope.sign(random_asset_issuer.secret)
+        response = self.server.submit_transaction(transaction_envelope)
+
+        loader = BribesLoader(self.bribe_wallet.public_key, self.bribe_wallet.secret)
+        loader.load_bribes()
+
+        self.assertEqual(Bribe.objects.count(), 1)
+        self.assertEqual(Bribe.objects.first().status, Bribe.STATUS_PENDING)
+        start_at = timezone.now()
+        start_at = claim_after + timedelta(days=8 - claim_after.isoweekday())
+        start_at = start_at.replace(hour=0, minute=0, second=0, microsecond=0)
+        self.assertEqual(Bribe.objects.first().start_at, start_at)
+
+        config.CONVERTATION_AMOUNT = Decimal(1)
+        self._prepare_orderbook(Decimal('100'), Decimal('0.33'))
+
+        with patch(
+            'stellar_sdk.server.Server.load_account',
+            new=MagicMock(return_value=Account(account_id=self.bribe_wallet.public_key, sequence=0))
+        ):
+            task_claim_bribes()
+
+        self.assertEqual(Bribe.objects.first().status, Bribe.STATUS_PENDING)
