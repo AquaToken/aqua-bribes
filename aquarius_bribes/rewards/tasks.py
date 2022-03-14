@@ -105,6 +105,7 @@ def task_pay_rewards(snapshot_time=None, reward_period=DEFAULT_REWARD_PERIOD):
                 ).values_list('account'),
             )
 
-        reward_amount = bribe.daily_amount * Decimal(reward_period.total_seconds() / (24 * 3600))
-        reward_payer = RewardPayer(bribe, reward_wallet, bribe.asset, reward_amount, stop_at=stop_at)
-        reward_payer.pay_reward(votes)
+        if votes.count() > 0:
+            reward_amount = bribe.daily_amount * Decimal(reward_period.total_seconds() / (24 * 3600))
+            reward_payer = RewardPayer(bribe, reward_wallet, bribe.asset, reward_amount, stop_at=stop_at)
+            reward_payer.pay_reward(votes)
