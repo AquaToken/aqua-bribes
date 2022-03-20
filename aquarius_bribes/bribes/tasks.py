@@ -56,6 +56,8 @@ def task_claim_bribes():
                 bribe.status = Bribe.STATUS_FAILED_CLAIM
                 bribe.save()
 
+        ready_to_claim = Bribe.objects.filter(unlock_time__lte=timezone.now(), status=Bribe.STATUS_PENDING)
+
 
 @celery_app.task(ignore_result=True, soft_time_limit=60 * 15, time_limit=60 * 15)
 def task_update_bribe_aqua_equivalent():
