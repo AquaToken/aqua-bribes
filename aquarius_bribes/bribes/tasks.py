@@ -45,7 +45,7 @@ def task_claim_bribes():
                 ]
                 if transaction_fail_reason not in safe_fail_reasons:
                     message = bribe.message or ''
-                    message += '\n' + str(e)
+                    message += '\n' + str(submit_exc)
                     bribe.message = message
                     bribe.status = Bribe.STATUS_FAILED_CLAIM
                     bribe.save()
