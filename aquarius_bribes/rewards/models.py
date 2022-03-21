@@ -32,16 +32,16 @@ class Payout(models.Model):
 
     stellar_transaction_id = models.CharField(max_length=64, blank=True)
     status = models.CharField(
-        choices=STATUS_CHOICES, default=STATUS_SUCCESS, max_length=30,
+        choices=STATUS_CHOICES, default=STATUS_SUCCESS, max_length=30, db_index=True,
     )
-    message = models.TextField(blank=True)
+    message = models.TextField(blank=True, db_index=True)
 
     reward_amount = models.DecimalField(max_digits=20, decimal_places=7, null=True)
 
     asset_code = models.CharField(max_length=12)
     asset_issuer = models.CharField(max_length=56)
 
-    created_at = models.DateTimeField(auto_now_add=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
@@ -52,14 +52,14 @@ class Payout(models.Model):
 
 
 class AssetHolderBalanceSnapshot(models.Model):
-    account = models.CharField(max_length=255)
+    account = models.CharField(max_length=255, db_index=True)
 
     asset_code = models.CharField(max_length=12)
     asset_issuer = models.CharField(max_length=56)
 
     balance = models.DecimalField(max_digits=20, decimal_places=7)
 
-    created_at = models.DateTimeField(auto_now_add=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
 
     def __str__(self):
         return '{0}..{1} at {2}: {3} {4}'.format(
