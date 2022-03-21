@@ -5,9 +5,9 @@ class VoteSnapshot(models.Model):
     market_key = models.ForeignKey('bribes.MarketKey', null=True, on_delete=models.PROTECT)
 
     votes_value = models.DecimalField(max_digits=20, decimal_places=7)
-    voting_account = models.CharField(max_length=56)
+    voting_account = models.CharField(max_length=56, db_index=True)
 
-    snapshot_time = models.DateField()
+    snapshot_time = models.DateField(db_index=True)
 
     def __str__(self):
         return 'VoteSnapshot: {}..{} ({})'.format(
