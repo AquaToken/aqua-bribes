@@ -76,7 +76,6 @@ def task_make_trustees_snapshot(snapshot_time=None):
     time_limit=PAYREWARD_TIME_LIMIT.total_seconds() + 60 * 3,
 )
 def task_pay_rewards(snapshot_time=None, reward_period=DEFAULT_REWARD_PERIOD):
-    return
     if cache.get(LOAD_VOTES_TASK_ACTIVE_KEY, False):
         return
 
