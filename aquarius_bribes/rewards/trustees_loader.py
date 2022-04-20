@@ -34,13 +34,16 @@ class TrusteesLoader(object):
         cache.set(self.last_id_cache_key, last_id, self.last_id_cache_timeout)
 
     def _get_page(self, page_limit: int = 200) -> List[Dict]:
-        return self.horizon.accounts().for_asset(
-            Asset(code=self.asset.code, issuer=self.asset.issuer),
-        ).cursor(
-            self.load_last_event_id(),
-        ).limit(page_limit).order(
-            desc=False,
-        ).call()['_embedded']['records']
+        try:
+            return self.horizon.accounts().for_asset(
+                Asset(code=self.asset.code, issuer=self.asset.issuer),
+            ).cursor(
+                self.load_last_event_id(),
+            ).limit(page_limit).order(
+                desc=False,
+            ).call()['_embedded']['records']
+        except (BadResponseError, ConnectionError):
+            return None
 
     def make_balances_spanshot(self):
         accounts_page = self._get_page()
