@@ -64,7 +64,7 @@ class Bribe(models.Model):
     start_at = models.DateTimeField(null=True)
     stop_at = models.DateTimeField(null=True)
 
-    created_at = models.DateTimeField()
+    created_at = models.DateTimeField(null=True)
 
     loaded_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

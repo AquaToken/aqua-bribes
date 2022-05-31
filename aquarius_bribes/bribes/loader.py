@@ -106,13 +106,16 @@ class BribesLoader(object):
 
         try:
             balance_created_at = date_parse(balance_created_at)
-
-            if unlock_time:
-                unlock_time = date_parse(unlock_time)
         except ValueError:
-            unlock_time = None
             balance_created_at = None
             messages.append('Invalid predicate: invalid time format')
+
+        if unlock_time:
+            try:
+                unlock_time = date_parse(unlock_time)
+            except ValueError:
+                unlock_time = None
+                messages.append('Invalid predicate: invalid unlock time format')
 
         if len(messages) > 0 and unlock_time:
             status = Bribe.STATUS_PENDING_RETURN
