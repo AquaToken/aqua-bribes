@@ -46,9 +46,7 @@ class BribesLoader(object):
 
         last_id = self.load_last_event_id()
         if last_id:
-            builder = builder.cursor(
-                self.load_last_event_id(),
-            )
+            builder = builder.cursor(last_id)
         
         return builder.call()['_embedded']['records']
 
