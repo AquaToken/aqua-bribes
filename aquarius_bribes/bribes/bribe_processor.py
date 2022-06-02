@@ -5,7 +5,7 @@ from decimal import Decimal
 from stellar_sdk import Asset, TransactionBuilder
 from stellar_sdk.operation import PathPaymentStrictReceive
 from stellar_sdk.strkey import StrKey
-from stellar_sdk.xdr.utils import from_xdr_amount
+from stellar_sdk.utils import from_xdr_amount
 from stellar_sdk.xdr import TransactionMeta
 
 from aquarius_bribes.bribes.exceptions import NoPathForConversionError
@@ -71,15 +71,13 @@ class BribeProcessor(object):
     def convert_asset(self, bribe, using_builder=None):
         builder = using_builder or self._get_builder()
 
-        path = self._get_path(bribe.asset, self.convert_to_asset, config.CONVERTATION_AMOUNT)
+        path = self._get_path(bribe.asset, self.convert_to_asset, str(config.CONVERTATION_AMOUNT))
 
         builder.append_path_payment_strict_receive_op(
             destination=self.bribe_address,
-            send_code=bribe.asset.code,
-            send_issuer=bribe.asset.issuer,
+            send_asset=bribe.asset,
+            dest_asset=self.convert_to_asset,
             send_max=bribe.amount,
-            dest_code=self.convert_to_asset.code,
-            dest_issuer=self.convert_to_asset.issuer,
             dest_amount=config.CONVERTATION_AMOUNT,
             path=path,
         )
@@ -97,8 +95,7 @@ class BribeProcessor(object):
         balance = self.has_trustline(bribe.asset, self.bribe_address)
         if not bribe.asset.is_native() and not balance:
             builder.append_change_trust_op(
-                asset_code=bribe.asset_code,
-                asset_issuer=bribe.asset_issuer,
+                asset=Asset(code=bribe.asset_code, issuer=bribe.asset_issuer),
             )
 
         builder.append_claim_claimable_balance_op(bribe.claimable_balance_id)
@@ -115,8 +112,7 @@ class BribeProcessor(object):
 
         builder.append_payment_op(
             destination=destination,
-            asset_code=asset.code,
-            asset_issuer=asset.issuer,
+            asset=asset,
             source=source,
             amount=amount,
         )

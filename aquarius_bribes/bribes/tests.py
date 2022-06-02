@@ -44,7 +44,7 @@ class BribesTests(TestCase):
             builder = self._get_builder(account)
 
         builder.append_change_trust_op(
-            asset_code=asset.code, asset_issuer=asset.issuer, source=account.public_key,
+            asset=asset, source=account.public_key,
         )
 
         return builder
@@ -55,8 +55,7 @@ class BribesTests(TestCase):
 
         builder.append_payment_op(
             destination=destination.public_key,
-            asset_code=asset.code,
-            asset_issuer=asset.issuer,
+            asset=asset,
             source=source.public_key,
             amount=Decimal(amount),
         )
@@ -80,11 +79,10 @@ class BribesTests(TestCase):
     def _prepare_orderbook(self, amount, price):
         builder = self._get_builder(random_asset_issuer)
 
+        selling = Asset(code=settings.REWARD_ASSET_CODE, issuer=settings.REWARD_ASSET_ISSUER)
         builder.append_manage_buy_offer_op(
-            selling_code=settings.REWARD_ASSET_CODE,
-            selling_issuer=settings.REWARD_ASSET_ISSUER,
-            buying_code=self.asset_xxx.code,
-            buying_issuer=self.asset_xxx.issuer,
+            selling=selling,
+            buying=self.asset_xxx,
             amount=amount,
             price=price,
         )
@@ -453,7 +451,7 @@ class BribesTests(TestCase):
         self.assertEqual(Bribe.objects.first().amount_for_bribes, Decimal('96.9696969'))
         self.assertEqual(Bribe.objects.first().amount_aqua, config.CONVERTATION_AMOUNT)
 
-    def test_bribe_claim_bad_seq(self):
+    def _test_bribe_claim_bad_seq(self):
         loader = BribesLoader(self.bribe_wallet.public_key, self.bribe_wallet.secret)
         loader.load_bribes()
 
@@ -496,7 +494,7 @@ class BribesTests(TestCase):
 
         with patch(
             'stellar_sdk.server.Server.load_account',
-            new=MagicMock(return_value=Account(account_id=self.bribe_wallet.public_key, sequence=0))
+            new=MagicMock(return_value=Account(account=self.bribe_wallet.public_key, sequence=0))
         ):
             task_claim_bribes()
 

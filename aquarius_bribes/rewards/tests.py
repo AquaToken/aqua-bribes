@@ -46,7 +46,7 @@ class BribesTests(TestCase):
             builder = self._get_builder(account)
 
         builder.append_change_trust_op(
-            asset_code=asset.code, asset_issuer=asset.issuer, source=account.public_key,
+            asset=asset, source=account.public_key,
         )
 
         return builder
@@ -57,8 +57,7 @@ class BribesTests(TestCase):
 
         builder.append_payment_op(
             destination=destination.public_key,
-            asset_code=asset.code,
-            asset_issuer=asset.issuer,
+            asset=asset,
             source=source.public_key,
             amount=Decimal(amount),
         )

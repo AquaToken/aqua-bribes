@@ -38,13 +38,19 @@ class BribesLoader(object):
         cache.set(self.last_id_cache_key, last_id, self.last_id_cache_timeout)
 
     def _get_page(self, page_limit: int = 200):
-        return self.horizon.claimable_balances().for_claimant(
+        builder = self.horizon.claimable_balances().for_claimant(
             self.account,
-        ).limit(page_limit).cursor(
-            self.load_last_event_id(),
-        ).order(
+        ).limit(page_limit).order(
             desc=False,
-        ).call()['_embedded']['records']
+        )
+
+        last_id = self.load_last_event_id()
+        if last_id:
+            builder = builder.cursor(
+                self.load_last_event_id(),
+            )
+        
+        return builder.call()['_embedded']['records']
 
     def _is_market_key_predicate_correct(self, predicate: dict):
         return predicate == {
