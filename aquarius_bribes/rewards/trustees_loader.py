@@ -42,6 +42,18 @@ class TrusteesLoader(object):
             ).limit(page_limit).order(
                 desc=False,
             ).call()['_embedded']['records']
+
+            page_builder = self.horizon.accounts().for_asset(
+                Asset(code=self.asset.code, issuer=self.asset.issuer),
+            ).limit(page_limit).order(
+                desc=False,
+            )
+
+            last_id = self.load_last_event_id(),
+            if last_id:
+                page_builder = page_builder.cursor(last_id)
+
+            return page_builder.call()['_embedded']['records']
         except (BadResponseError, ConnectionError):
             return None
 
