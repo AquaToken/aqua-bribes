@@ -41,7 +41,7 @@ class TrusteesLoader(object):
                 desc=False,
             )
 
-            last_id = self.load_last_event_id(),
+            last_id = self.load_last_event_id()
             if last_id:
                 page_builder = page_builder.cursor(last_id)
 
