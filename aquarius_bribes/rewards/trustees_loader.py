@@ -35,14 +35,6 @@ class TrusteesLoader(object):
 
     def _get_page(self, page_limit: int = 200) -> List[Dict]:
         try:
-            return self.horizon.accounts().for_asset(
-                Asset(code=self.asset.code, issuer=self.asset.issuer),
-            ).cursor(
-                self.load_last_event_id(),
-            ).limit(page_limit).order(
-                desc=False,
-            ).call()['_embedded']['records']
-
             page_builder = self.horizon.accounts().for_asset(
                 Asset(code=self.asset.code, issuer=self.asset.issuer),
             ).limit(page_limit).order(
