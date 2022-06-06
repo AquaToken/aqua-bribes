@@ -68,6 +68,7 @@ def task_make_trustees_snapshot(snapshot_time=None):
             asset = Asset(code=asset_data[0], issuer=asset_data[1])
 
             loader = TrusteesLoader(asset)
+            loader.save_last_event_id(None)
             loader.make_balances_spanshot()
 
 
