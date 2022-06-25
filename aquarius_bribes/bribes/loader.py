@@ -151,6 +151,16 @@ class BribesLoader(object):
         bribe_instance = self.parse(bribe)
         return bribe_instance
 
+    def save_all_items(self, items):
+        try:
+            Bribe.objects.bulk_create(items, batch_size=5000)
+        except IntegrityError:
+            for item in items:
+                try:
+                    item.save()
+                except IntegrityError:
+                    pass
+
     def load_bribes(self):
         bribes = self._get_page()
 
@@ -161,7 +171,7 @@ class BribesLoader(object):
                     self.process_bribe(bribe)
                 )
 
-            Bribe.objects.bulk_create(parsed_bribes, batch_size=5000)
+            self.save_all_items(parsed_bribes)
             self.save_last_event_id(parsed_bribes[-1].paging_token)
 
             bribes = self._get_page()
