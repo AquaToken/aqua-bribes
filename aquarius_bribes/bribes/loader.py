@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.core.cache import cache
+from django.db import IntegrityError
 
 from datetime import timedelta
 from dateutil.parser import parse as date_parse
