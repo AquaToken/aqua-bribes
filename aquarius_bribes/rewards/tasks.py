@@ -21,6 +21,7 @@ from aquarius_bribes.taskapp import app as celery_app
 DEFAULT_REWARD_PERIOD = timedelta(hours=24)
 PAYREWARD_TIME_LIMIT = timedelta(minutes=55)
 LOAD_VOTES_TASK_ACTIVE_KEY = 'LOAD_VOTES_TASK_ACTIVE_KEY'
+LOAD_TRUSTORS_TASK_ACTIVE_KEY = 'LOAD_TRUSTORS_TASK_ACTIVE_KEY'
 
 
 @celery_app.task(ignore_result=True, soft_time_limit=60 * 20, time_limit=60 * 30)
@@ -28,16 +29,16 @@ def task_run_load_votes():
     hour = random.randint(0, 12)
     task_load_votes.apply_async(countdown=int(hour * timedelta(hours=1).total_seconds()))
 
+    task_make_trustees_snapshot.delay()
 
-@celery_app.task(ignore_result=True, soft_time_limit=60 * 60 * 4, time_limit=60 * (60 * 4 + 5))
+
+@celery_app.task(ignore_result=True, soft_time_limit=60 * 60 * 1, time_limit=60 * (60 * 1 + 5))
 def task_load_votes(snapshot_time=None):
     cache.set(LOAD_VOTES_TASK_ACTIVE_KEY, True, None)
 
     if snapshot_time is None:
         snapshot_time = timezone.now()
         snapshot_time = snapshot_time.replace(minute=0, second=0, microsecond=0)
-
-    task_make_trustees_snapshot()
 
     markets_with_active_bribes = AggregatedByAssetBribe.objects.filter(
         start_at__lte=snapshot_time, stop_at__gt=snapshot_time,
@@ -50,8 +51,10 @@ def task_load_votes(snapshot_time=None):
     cache.set(LOAD_VOTES_TASK_ACTIVE_KEY, False, None)
 
 
-@celery_app.task(ignore_result=True, soft_time_limit=60 * 30, time_limit=60 * 35)
+@celery_app.task(ignore_result=True, soft_time_limit=60 * 60 * 8, time_limit=60 * (60 * 8 + 5))
 def task_make_trustees_snapshot(snapshot_time=None):
+    cache.set(LOAD_TRUSTORS_TASK_ACTIVE_KEY, True, None)
+
     if snapshot_time is None:
         snapshot_time = timezone.now()
 
@@ -71,13 +74,15 @@ def task_make_trustees_snapshot(snapshot_time=None):
             loader.save_last_event_id(None)
             loader.make_balances_spanshot()
 
+    cache.set(LOAD_TRUSTORS_TASK_ACTIVE_KEY, False, None)
+
 
 @celery_app.task(
     ignore_result=True, soft_time_limit=PAYREWARD_TIME_LIMIT.total_seconds(),
     time_limit=PAYREWARD_TIME_LIMIT.total_seconds() + 60 * 3,
 )
 def task_pay_rewards(snapshot_time=None, reward_period=DEFAULT_REWARD_PERIOD):
-    if cache.get(LOAD_VOTES_TASK_ACTIVE_KEY, False):
+    if cache.get(LOAD_VOTES_TASK_ACTIVE_KEY, False) or cache.get(LOAD_TRUSTORS_TASK_ACTIVE_KEY, False):
         return
 
     stop_at = timezone.now() + PAYREWARD_TIME_LIMIT
