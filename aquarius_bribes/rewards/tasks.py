@@ -29,7 +29,7 @@ def task_run_load_votes():
     task_load_votes.apply_async(countdown=int(hour * timedelta(hours=1).total_seconds()))
 
 
-@celery_app.task(ignore_result=True, soft_time_limit=60 * 60 * 3, time_limit=60 * (60 * 3 + 5))
+@celery_app.task(ignore_result=True, soft_time_limit=60 * 60 * 4, time_limit=60 * (60 * 4 + 5))
 def task_load_votes(snapshot_time=None):
     cache.set(LOAD_VOTES_TASK_ACTIVE_KEY, True, None)
 
