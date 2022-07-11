@@ -26,7 +26,7 @@ LOAD_TRUSTORS_TASK_ACTIVE_KEY = 'LOAD_TRUSTORS_TASK_ACTIVE_KEY'
 
 @celery_app.task(ignore_result=True, soft_time_limit=60 * 20, time_limit=60 * 30)
 def task_run_load_votes():
-    hour = random.randint(0, 12)
+    hour = random.randint(0, 22)
     task_load_votes.apply_async(countdown=int(hour * timedelta(hours=1).total_seconds()))
 
     task_make_trustees_snapshot.delay()
