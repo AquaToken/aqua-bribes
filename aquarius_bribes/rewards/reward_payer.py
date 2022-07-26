@@ -118,6 +118,7 @@ class BaseRewardPayer(object):
                         payouts[index].message = code
                         payouts[index].status = self.payout_class.STATUS_FAILED
                         failed_payouts.append(payouts[index])
+                    payouts[index].stellar_transaction_id = transaction_envelope.hash_hex()
 
                 if operation_fail_reasons:
                     self.payout_class.objects.bulk_create(failed_payouts)
