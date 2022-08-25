@@ -1,3 +1,5 @@
+import logging
+
 from django.conf import settings
 from django.core.cache import cache
 from django.db import IntegrityError
@@ -17,6 +19,7 @@ class BribesLoader(object):
         self.horizon = get_horizon()
         self.last_id_cache_key = None
         self.last_id_cache_timeout = last_id_cache_timeout
+        self.logger = logging.getLogger('BribesLoader')
 
     def load_last_event_id(self) -> str:
         paging_token = cache.get(self.last_id_cache_key, None)
@@ -90,7 +93,8 @@ class BribesLoader(object):
 
         balance_created_at = bribe['last_modified_time']
         if len(claimants) != 2:
-            raise Exception('Invalid claimants.')
+            self.logger.error('Invalid claimants %s',  bribe['id'])
+            return None
 
         bribe_collector_claim, market_key_claim = sorted(
             claimants, key=lambda cl: cl['destination'] == self.account, reverse=True,
@@ -168,9 +172,11 @@ class BribesLoader(object):
         while bribes:
             parsed_bribes = []
             for bribe in bribes:
-                parsed_bribes.append(
-                    self.process_bribe(bribe)
-                )
+                bribe_instance = self.process_bribe(bribe)
+                if bribe_instance:
+                    parsed_bribes.append(
+                        self.process_bribe(bribe)
+                    )
 
             self.save_all_items(parsed_bribes)
             self.save_last_event_id(parsed_bribes[-1].paging_token)
