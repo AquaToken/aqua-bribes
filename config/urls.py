@@ -24,6 +24,7 @@ from django.views.generic import TemplateView
 
 urlpatterns = [
     path('api/', include('aquarius_bribes.bribes.urls')),
+    path('api/', include('aquarius_bribes.rewards.urls')),
     path('open/cms/', admin.site.urls),
     path('terms/', TemplateView.as_view(template_name='pages/terms.html')),
 ]
