@@ -56,8 +56,13 @@ def setup_periodic_tasks(sender, **kwargs):
             'schedule': crontab(hour='20', minute='0', day_of_week='sunday'),
             'args': (),
         },
-        'aquarius_bribes.rewards.tasks.task_run_load_votes': {
-            'task': 'aquarius_bribes.rewards.tasks.task_run_load_votes',
+        # 'aquarius_bribes.rewards.tasks.task_run_load_votes': {
+        #     'task': 'aquarius_bribes.rewards.tasks.task_run_load_votes',
+        #     'schedule': crontab(hour='0', minute='0'),
+        #     'args': (),
+        # },
+        'aquarius_bribes.rewards.tasks.task_make_trustees_snapshot': {
+            'task': 'aquarius_bribes.rewards.tasks.task_make_trustees_snapshot',
             'schedule': crontab(hour='0', minute='0'),
             'args': (),
         },
