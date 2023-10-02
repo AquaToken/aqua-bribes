@@ -38,7 +38,10 @@ def task_claim_bribes():
                 bribe.status = Bribe.STATUS_NO_PATH_FOR_CONVERSION
                 bribe.save()
             except BaseHorizonError as submit_exc:
-                transaction_fail_reason = submit_exc.extras.get('result_codes', {}).get('transaction', 'no_reason')
+                if submit_exc.extras:
+                    transaction_fail_reason = submit_exc.extras.get('result_codes', {}).get('transaction', 'no_reason')
+                else:
+                    transaction_fail_reason = submit_exc.message
                 safe_fail_reasons = [
                     'tx_bad_seq',
                     'tx_bad_auth',
