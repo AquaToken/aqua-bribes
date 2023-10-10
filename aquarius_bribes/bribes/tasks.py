@@ -46,7 +46,10 @@ def task_claim_bribes():
                     'tx_bad_seq',
                     'tx_bad_auth',
                 ]
-                if transaction_fail_reason not in safe_fail_reasons:
+                if (
+                    getattr(submit_exc, 'status', None) not in (504, 522, 502)
+                    and transaction_fail_reason not in safe_fail_reasons
+                ):
                     message = bribe.message or ''
                     message += '\n' + str(submit_exc)
                     bribe.message = message
