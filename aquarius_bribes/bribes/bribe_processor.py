@@ -153,7 +153,13 @@ class BribeProcessor(object):
         else:
             meta = TransactionMeta.from_xdr(response['result_meta_xdr'])
 
-            path_payment_changes = meta.v2.operations[-1].changes.ledger_entry_changes
+            operations = None
+            if meta.v2:
+                operations = meta.v2.operations
+            else:
+                operations = meta.v3.operations
+
+            path_payment_changes = operations[-1].changes.ledger_entry_changes
             for change in path_payment_changes:
                 if change.updated and change.updated.data:
                     if bribe.asset == Asset.native() and change.updated.data.account:
