@@ -3,6 +3,7 @@ import logging
 from django.conf import settings
 from django.core.cache import cache
 from django.db import IntegrityError
+from django.utils import timezone
 
 from datetime import timedelta
 from dateutil.parser import parse as date_parse
@@ -113,11 +114,14 @@ class BribesLoader(object):
         if not unlock_time:
             messages.append('Invalid predicate: bribe account predicate incorrect time')
 
-        try:
-            balance_created_at = date_parse(balance_created_at)
-        except ValueError:
-            balance_created_at = None
-            messages.append('Invalid predicate: invalid time format')
+        if balance_created_at is not None:
+            try:
+                balance_created_at = date_parse(balance_created_at)
+            except ValueError:
+                balance_created_at = None
+                messages.append('Invalid predicate: invalid time format')
+        else:
+            balance_created_at = timezone.now()
 
         if unlock_time:
             try:
