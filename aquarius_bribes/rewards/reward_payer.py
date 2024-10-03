@@ -108,9 +108,16 @@ class BaseRewardPayer(object):
             else:
                 failed_payouts = []
 
-                operation_fail_reasons = submit_exc.extras.get('result_codes', {}).get('operations', [])
+                if submit_exc.extras:
+                    operation_fail_reasons = submit_exc.extras.get('result_codes', {}).get('operations', [])
+                else:
+                    operation_fail_reasons = None
                 if not operation_fail_reasons:
-                    operation_fail_reasons = submit_exc.extras.get('result_codes', {}).get('transaction', 'no_reason')
+                    if submit_exc.extras:
+                        operation_fail_reasons = submit_exc.extras.get('result_codes', {}).get('transaction', 'no_reason')
+                    else:
+                        operation_fail_reasons = 'no_reason'
+
                     operation_fail_reasons = [operation_fail_reasons] * len(payouts)
 
                 for index, code in enumerate(operation_fail_reasons):
