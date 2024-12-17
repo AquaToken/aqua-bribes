@@ -52,6 +52,7 @@ django-cors-headers = "*"
 django-filter = "*"
 wheel = "==0.38.1"
 aiohttp = "==3.9.2"
+typing-extensions = "*"
 
 [requires]
 python_version = "3.11"
