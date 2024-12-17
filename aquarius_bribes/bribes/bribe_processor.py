@@ -10,6 +10,7 @@ from stellar_sdk.xdr import TransactionMeta
 
 from aquarius_bribes.bribes.exceptions import NoPathForConversionError
 from aquarius_bribes.bribes.utils import get_horizon
+from aquarius_bribes.utils.ledger_transactions_collector import LedgerTransactionsCollector
 
 
 class BribeProcessor(object):
@@ -142,6 +143,11 @@ class BribeProcessor(object):
             self.process_response(response, bribe, transaction_envelope)
             return response
 
+    def _get_transaction_result_meta(self, transaction_hash):
+        ledger_transaction_collector = LedgerTransactionsCollector(0)
+        transaction = ledger_transaction_collector.get_transaction(transaction_hash)
+        return transaction.result_meta_xdr
+
     def process_response(self, response, bribe, transaction_envelope):
         bribe.convertation_tx_hash = response['hash']
         bribe.save()
@@ -151,7 +157,12 @@ class BribeProcessor(object):
             bribe.amount_aqua = config.CONVERTATION_AMOUNT
             bribe.save()
         else:
-            meta = TransactionMeta.from_xdr(response['result_meta_xdr'])
+            result_meta_xdr = None
+            if not response.get("result_meta_xdr", None):
+                result_meta_xdr = self._get_transaction_result_meta(response["hash"])
+            else:
+                result_meta_xdr = response["result_meta_xdr"]
+            meta = TransactionMeta.from_xdr(result_meta_xdr)
 
             operations = None
             if meta.v2:

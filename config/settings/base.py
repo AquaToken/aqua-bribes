@@ -197,6 +197,7 @@ REST_FRAMEWORK = {
 
 STELLAR_PASSPHRASE = NotImplemented
 HORIZON_URL = NotImplemented
+SOROBAN_RPC_URL = NotImplemented
 BASE_FEE = 10 ** 5 * 2
 
 
