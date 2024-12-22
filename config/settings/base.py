@@ -216,6 +216,7 @@ REWARD_ASSET_ISSUER = NotImplemented
 CONSTANCE_CONFIG = {
     'CONVERTATION_AMOUNT': (Decimal('100000'), 'Amount in aqua needed for bribe accept', Decimal),
 }
+CONSTANCE_BACKEND = 'constance.backends.database.DatabaseBackend'
 
 CORS_ALLOWED_ORIGIN_REGEXES = [
     r"^https://aqua\.network$",
