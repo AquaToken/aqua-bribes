@@ -1,7 +1,8 @@
+from decimal import Decimal
+
 from django.conf import settings
 
 from constance import config
-from decimal import Decimal
 from stellar_sdk import Asset, TransactionBuilder
 from stellar_sdk.operation import PathPaymentStrictReceive
 from stellar_sdk.strkey import StrKey
@@ -29,7 +30,7 @@ class BribeProcessor(object):
     def get_account_info(self, address):
         try:
             return self.horizon.accounts().account_id(address).call()
-        except:
+        except Exception:
             return None
 
     def has_trustline(self, asset, address):

@@ -20,7 +20,9 @@ class AssetListFilter(admin.SimpleListFilter):
 
 @admin.register(VoteSnapshot)
 class VoteSnapshotAdmin(admin.ModelAdmin):
-    list_display = ('get_short_market_key', 'voting_account', 'votes_value', 'snapshot_time')
+    list_display = (
+        'get_short_market_key', 'voting_account', 'votes_value', 'is_delegated', 'has_delegation', 'snapshot_time',
+    )
     search_fields = ('market_key__market_key', 'voting_account')
     list_filter = ('snapshot_time', )
 
@@ -31,7 +33,9 @@ class VoteSnapshotAdmin(admin.ModelAdmin):
 
 @admin.register(Payout)
 class PayoutAdmin(admin.ModelAdmin):
-    list_display = ('vote_snapshot', 'get_short_market_key', 'status', 'created_at', 'message', 'stellar_transaction_id')
+    list_display = (
+        'vote_snapshot', 'get_short_market_key', 'status', 'created_at', 'message', 'stellar_transaction_id',
+    )
     list_filter = ('created_at', 'status')
     search_fields = ('stellar_transaction_id', 'vote_snapshot__voting_account', 'bribe__market_key__market_key')
 

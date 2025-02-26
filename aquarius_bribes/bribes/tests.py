@@ -1,20 +1,18 @@
+from datetime import timedelta
+from decimal import Decimal
+from unittest.mock import MagicMock, patch
+
 from django.conf import settings
 from django.test import TestCase, override_settings
 from django.utils import timezone
 
 import requests
-from unittest.mock import MagicMock, patch
-
 from constance import config
-from datetime import timedelta
-from decimal import Decimal
-from stellar_sdk import Account, Asset, Claimant, ClaimPredicate
-from stellar_sdk import Keypair, Server, TransactionBuilder
+from stellar_sdk import Account, Asset, Claimant, ClaimPredicate, Keypair, Server, TransactionBuilder
 
 from aquarius_bribes.bribes.loader import BribesLoader
 from aquarius_bribes.bribes.models import AggregatedByAssetBribe, Bribe
 from aquarius_bribes.bribes.tasks import task_aggregate_bribes, task_claim_bribes, task_return_bribes
-
 
 random_asset_issuer = Keypair.random()
 bribe_wallet = Keypair.random()
@@ -28,6 +26,7 @@ class BribesTests(TestCase):
     def _create_account(self, account):
         # Fund new wallet
         response = requests.get('https://friendbot.stellar.org/?addr={}'.format(account))
+        return response
 
     def _get_builder(self, source):
         account_info = self._load_or_create_account(source.public_key)
@@ -75,7 +74,6 @@ class BribesTests(TestCase):
 
         return builder
 
-
     def _prepare_orderbook(self, amount, price):
         builder = self._get_builder(random_asset_issuer)
 
@@ -90,11 +88,10 @@ class BribesTests(TestCase):
         transaction_envelope.sign(random_asset_issuer.secret)
         return self.server.submit_transaction(transaction_envelope)
 
-
     def _load_or_create_account(self, account):
         try:
             account_info = self.server.load_account(account)
-        except:
+        except Exception:
             self._create_account(account)
             account_info = self._load_or_create_account(account)
 
@@ -126,7 +123,7 @@ class BribesTests(TestCase):
         transaction_envelope.sign(self.bribe_wallet.secret)
         transaction_envelope.sign(random_asset_issuer.secret)
 
-        response = self.server.submit_transaction(transaction_envelope)
+        self.server.submit_transaction(transaction_envelope)
 
     def test_bribe_claim_without_path(self):
         loader = BribesLoader(self.bribe_wallet.public_key, self.bribe_wallet.secret)
@@ -151,7 +148,7 @@ class BribesTests(TestCase):
         builder = self._send_claim(self.account_1, claimants, self.asset_xxx, amount=100, builder=builder)
         transaction_envelope = builder.build()
         transaction_envelope.sign(self.account_1.secret)
-        response = self.server.submit_transaction(transaction_envelope)
+        self.server.submit_transaction(transaction_envelope)
 
         loader = BribesLoader(self.bribe_wallet.public_key, self.bribe_wallet.secret)
         loader.load_bribes()
@@ -166,7 +163,6 @@ class BribesTests(TestCase):
         task_claim_bribes()
 
         self.assertEqual(Bribe.objects.first().status, Bribe.STATUS_NO_PATH_FOR_CONVERSION)
-
 
     def test_bribe_claim_without_path_and_return(self):
         loader = BribesLoader(self.bribe_wallet.public_key, self.bribe_wallet.secret)
@@ -192,6 +188,7 @@ class BribesTests(TestCase):
         transaction_envelope = builder.build()
         transaction_envelope.sign(self.account_1.secret)
         response = self.server.submit_transaction(transaction_envelope)
+        self.assertEqual(response['successful'], True)
 
         loader = BribesLoader(self.bribe_wallet.public_key, self.bribe_wallet.secret)
         loader.load_bribes()
@@ -244,6 +241,7 @@ class BribesTests(TestCase):
         transaction_envelope = builder.build()
         transaction_envelope.sign(self.account_1.secret)
         response = self.server.submit_transaction(transaction_envelope)
+        self.assertEqual(response['successful'], True)
 
         loader = BribesLoader(self.bribe_wallet.public_key, self.bribe_wallet.secret)
         loader.load_bribes()
@@ -279,6 +277,7 @@ class BribesTests(TestCase):
         transaction_envelope = builder.build()
         transaction_envelope.sign(self.account_1.secret)
         response = self.server.submit_transaction(transaction_envelope)
+        self.assertEqual(response['successful'], True)
 
         loader = BribesLoader(self.bribe_wallet.public_key, self.bribe_wallet.secret)
         loader.load_bribes()
@@ -324,12 +323,13 @@ class BribesTests(TestCase):
         transaction_envelope = builder.build()
         transaction_envelope.sign(self.account_1.secret)
         response = self.server.submit_transaction(transaction_envelope)
+        self.assertEqual(response['successful'], True)
 
         loader = BribesLoader(self.bribe_wallet.public_key, self.bribe_wallet.secret)
         loader.load_bribes()
 
         self.assertEqual(Bribe.objects.count(), 2)
-        self.assertEqual(list(Bribe.objects.values_list('status', flat=True).distinct()) , [Bribe.STATUS_PENDING, ])
+        self.assertEqual(list(Bribe.objects.values_list('status', flat=True).distinct()), [Bribe.STATUS_PENDING, ])
         start_at = timezone.now()
         start_at = claim_after + timedelta(days=8 - claim_after.isoweekday())
         start_at = start_at.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -341,8 +341,14 @@ class BribesTests(TestCase):
         task_claim_bribes()
 
         self.assertEqual(list(Bribe.objects.values_list('status', flat=True).distinct()), [Bribe.STATUS_ACTIVE, ])
-        self.assertEqual(list(Bribe.objects.values_list('amount_for_bribes', flat=True).distinct()), [Decimal('96.9696969'), ])
-        self.assertEqual(list(Bribe.objects.values_list('amount_aqua', flat=True).distinct()), [config.CONVERTATION_AMOUNT, ])
+        self.assertEqual(
+            list(Bribe.objects.values_list('amount_for_bribes', flat=True).distinct()),
+            [Decimal('96.9696969'), ],
+        )
+        self.assertEqual(
+            list(Bribe.objects.values_list('amount_aqua', flat=True).distinct()),
+            [config.CONVERTATION_AMOUNT, ],
+        )
 
         task_aggregate_bribes()
 
@@ -385,6 +391,7 @@ class BribesTests(TestCase):
         transaction_envelope.sign(self.account_1.secret)
         transaction_envelope.sign(random_asset_issuer.secret)
         response = self.server.submit_transaction(transaction_envelope)
+        self.assertEqual(response['successful'], True)
 
         loader = BribesLoader(self.bribe_wallet.public_key, self.bribe_wallet.secret)
         loader.load_bribes()
@@ -430,6 +437,7 @@ class BribesTests(TestCase):
         transaction_envelope = builder.build()
         transaction_envelope.sign(self.account_1.secret)
         response = self.server.submit_transaction(transaction_envelope)
+        self.assertEqual(response['successful'], True)
 
         loader = BribesLoader(self.bribe_wallet.public_key, self.bribe_wallet.secret)
         loader.load_bribes()
@@ -478,6 +486,7 @@ class BribesTests(TestCase):
         transaction_envelope.sign(self.account_1.secret)
         transaction_envelope.sign(random_asset_issuer.secret)
         response = self.server.submit_transaction(transaction_envelope)
+        self.assertEqual(response['successful'], True)
 
         loader = BribesLoader(self.bribe_wallet.public_key, self.bribe_wallet.secret)
         loader.load_bribes()

@@ -1,7 +1,7 @@
-from django.db import models
-
 from datetime import timedelta
-from decimal import Decimal, ROUND_DOWN
+from decimal import ROUND_DOWN, Decimal
+
+from django.db import models
 
 from stellar_sdk import Asset
 
@@ -102,13 +102,13 @@ class Bribe(models.Model):
 
     @property
     def daily_bribe_amount(self):
-        return Decimal(self.amount_for_bribes  / self.DEFAULT_DURATION.days).quantize(
+        return Decimal(self.amount_for_bribes / self.DEFAULT_DURATION.days).quantize(
             Decimal('0.0000001'), rounding=ROUND_DOWN,
         )
 
     @property
     def daily_aqua_amount(self):
-        return Decimal(self.amount_aqua  / self.DEFAULT_DURATION.days).quantize(
+        return Decimal(self.amount_aqua / self.DEFAULT_DURATION.days).quantize(
             Decimal('0.0000001'), rounding=ROUND_DOWN,
         )
 
@@ -134,12 +134,11 @@ class AggregatedByAssetBribe(models.Model):
             return self.asset.code
         return '{} ({}...{})'.format(
             self.asset.code, self.asset_issuer[:4], self.asset_issuer[-4:],
-            self.asset_code, self.asset_issuer[-4:],
         )
 
     @property
     def daily_amount(self):
-        return Decimal(self.total_reward_amount  / Bribe.DEFAULT_DURATION.days).quantize(
+        return Decimal(self.total_reward_amount / Bribe.DEFAULT_DURATION.days).quantize(
             Decimal('0.0000001'), rounding=ROUND_DOWN,
         )
 
@@ -148,7 +147,7 @@ class AggregatedByAssetBribe(models.Model):
         if not self.aqua_total_reward_amount_equivalent:
             return Decimal(0)
 
-        return Decimal(self.aqua_total_reward_amount_equivalent  / Bribe.DEFAULT_DURATION.days).quantize(
+        return Decimal(self.aqua_total_reward_amount_equivalent / Bribe.DEFAULT_DURATION.days).quantize(
             Decimal('0.0000001'), rounding=ROUND_DOWN,
         )
 

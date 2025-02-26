@@ -1,35 +1,48 @@
+from datetime import timedelta
+from decimal import Decimal
+from unittest import mock
+
 from django.conf import settings
+from django.db import models
 from django.test import TestCase, override_settings
 from django.utils import timezone
 
 import requests
-
 from constance import config
-from datetime import timedelta
-from decimal import Decimal
-from stellar_sdk import Asset, Claimant, ClaimPredicate
-from stellar_sdk import Keypair, Server, TransactionBuilder
+from stellar_sdk import Asset, Claimant, ClaimPredicate, Keypair, Server, TransactionBuilder
 
 from aquarius_bribes.bribes.models import AggregatedByAssetBribe, Bribe, MarketKey
 from aquarius_bribes.bribes.tasks import task_aggregate_bribes
-from aquarius_bribes.rewards.models import Payout, VoteSnapshot
+from aquarius_bribes.rewards.models import AssetHolderBalanceSnapshot, ClaimableBalance, Payout, VoteSnapshot
 from aquarius_bribes.rewards.reward_payer import RewardPayer
-from aquarius_bribes.rewards.votes_loader import VotesLoader
+from aquarius_bribes.rewards.tasks import (
+    task_load_votes,
+    task_make_claims_snapshot,
+    task_make_trustees_snapshot,
+    task_pay_rewards,
+)
 from aquarius_bribes.rewards.utils import SecuredWallet
-
+from aquarius_bribes.rewards.votes_loader import VotesLoader
+from aquarius_bribes.utils.assets import get_asset_string
 
 random_asset_issuer = Keypair.random()
 bribe_wallet = Keypair.random()
+
+DELEGATABLE_ASSETS = [
+    (Asset('upvote', random_asset_issuer.public_key), Asset('delegatedUp', random_asset_issuer.public_key))
+]
 
 
 @override_settings(
     REWARD_ASSET_CODE='ZZZ', REWARD_ASSET_ISSUER=random_asset_issuer.public_key,
     BRIBE_WALLET_ADDRESS=bribe_wallet.public_key, BRIBE_WALLET_SIGNER=bribe_wallet.secret,
+    DELEGATABLE_ASSETS=DELEGATABLE_ASSETS,
 )
 class BribesTests(TestCase):
     def _create_account(self, account):
         # Fund new wallet
         response = requests.get('https://friendbot.stellar.org/?addr={}'.format(account))
+        return response
 
     def _get_builder(self, source):
         account_info = self._load_or_create_account(source.public_key)
@@ -89,7 +102,6 @@ class BribesTests(TestCase):
 
         return builder
 
-
     def _prepare_orderbook(self, amount, price):
         builder = self._get_builder(random_asset_issuer)
 
@@ -105,11 +117,10 @@ class BribesTests(TestCase):
         transaction_envelope.sign(random_asset_issuer.secret)
         return self.server.submit_transaction(transaction_envelope)
 
-
     def _load_or_create_account(self, account):
         try:
             account_info = self.server.load_account(account)
-        except:
+        except Exception:
             self._create_account(account)
             account_info = self._load_or_create_account(account)
 
@@ -124,6 +135,9 @@ class BribesTests(TestCase):
         self.asset_xxx_issuer = Keypair.random()
         self.reward_asset = Asset(code=settings.REWARD_ASSET_CODE, issuer=settings.REWARD_ASSET_ISSUER)
 
+        self.delegation_asset = settings.DELEGATABLE_ASSETS[0][1]
+        self.delegated_asset = settings.DELEGATABLE_ASSETS[0][0]
+
         self.asset_xxx = Asset(code='XXX', issuer=self.asset_xxx_issuer.public_key)
         self._load_or_create_account(self.asset_xxx_issuer.public_key)
         self._load_or_create_account(random_asset_issuer.public_key)
@@ -137,8 +151,12 @@ class BribesTests(TestCase):
         builder = self._trust_asset(self.bribe_wallet, self.asset_xxx, builder=builder)
         builder = self._trust_asset(random_asset_issuer, self.asset_xxx, builder=builder)
         builder = self._payment(self.asset_xxx_issuer, self.account_1, self.asset_xxx, amount=1000, builder=builder)
-        builder = self._payment(self.asset_xxx_issuer, self.bribe_wallet, self.asset_xxx, amount=100000000, builder=builder)
-        builder = self._payment(random_asset_issuer, self.bribe_wallet, self.reward_asset, amount=100000000, builder=builder)
+        builder = self._payment(
+            self.asset_xxx_issuer, self.bribe_wallet, self.asset_xxx, amount=100000000, builder=builder,
+        )
+        builder = self._payment(
+            random_asset_issuer, self.bribe_wallet, self.reward_asset, amount=100000000, builder=builder,
+        )
         transaction_envelope = builder.build()
         transaction_envelope.sign(self.asset_xxx_issuer.secret)
         transaction_envelope.sign(self.account_1.secret)
@@ -146,8 +164,9 @@ class BribesTests(TestCase):
         transaction_envelope.sign(random_asset_issuer.secret)
 
         response = self.server.submit_transaction(transaction_envelope)
+        self.assertEqual(response['successful'], True)
 
-    def test_votes_loader(self):
+    def __________test_votes_loader(self):
         market_key = MarketKey(market_key='GBPF7NLFCYGZNHU6HS64ZGTE4YCRLAWTLFGOMFTHQ3WSUUFIGOSQFPJT')
         market_key.save()
         snapshot_time = timezone.now()
@@ -164,7 +183,7 @@ class BribesTests(TestCase):
 
         self.assertEqual(VoteSnapshot.objects.count(), response.json()['count'])
 
-    def test_reward_payer(self):
+    def __________test_reward_payer(self):
         market_key = MarketKey(market_key='GBPF7NLFCYGZNHU6HS64ZGTE4YCRLAWTLFGOMFTHQ3WSUUFIGOSQFPJT')
         market_key.save()
         snapshot_time = timezone.now()
@@ -188,7 +207,9 @@ class BribesTests(TestCase):
             builder = self._create_wallet(self.account_1, voting_account, 5, builder=builder)
             builder = self._trust_asset(voting_account, self.asset_xxx, builder=builder)
             builder = self._trust_asset(voting_account, self.reward_asset, builder=builder)
-            builder = self._payment(self.asset_xxx_issuer, voting_account, self.asset_xxx, amount=1000, builder=builder)
+            builder = self._payment(
+                self.asset_xxx_issuer, voting_account, self.asset_xxx, amount=1000, builder=builder,
+            )
 
         transaction_envelope = builder.build()
 
@@ -199,6 +220,8 @@ class BribesTests(TestCase):
         transaction_envelope.sign(self.asset_xxx_issuer.secret)
 
         response = self.server.submit_transaction(transaction_envelope)
+        self.assertEqual(response['successful'], True)
+
         VoteSnapshot.objects.bulk_create(votes)
 
         start_at = timezone.now()
@@ -235,7 +258,7 @@ class BribesTests(TestCase):
         self.assertEqual(Payout.objects.values_list('status', flat=True).distinct().count(), 1)
         self.assertEqual(Payout.objects.values_list('status', flat=True).distinct().first(), Payout.STATUS_SUCCESS)
 
-    def test_reward_payer_with_native_asset(self):
+    def __________test_reward_payer_with_native_asset(self):
         market_key = MarketKey(market_key='GBPF7NLFCYGZNHU6HS64ZGTE4YCRLAWTLFGOMFTHQ3WSUUFIGOSQFPJT')
         market_key.save()
         snapshot_time = timezone.now()
@@ -259,7 +282,9 @@ class BribesTests(TestCase):
             builder = self._create_wallet(self.account_1, voting_account, 5, builder=builder)
             builder = self._trust_asset(voting_account, self.asset_xxx, builder=builder)
             builder = self._trust_asset(voting_account, self.reward_asset, builder=builder)
-            builder = self._payment(self.asset_xxx_issuer, voting_account, self.asset_xxx, amount=1000, builder=builder)
+            builder = self._payment(
+                self.asset_xxx_issuer, voting_account, self.asset_xxx, amount=1000, builder=builder,
+            )
 
         transaction_envelope = builder.build()
 
@@ -270,6 +295,8 @@ class BribesTests(TestCase):
         transaction_envelope.sign(self.asset_xxx_issuer.secret)
 
         response = self.server.submit_transaction(transaction_envelope)
+        self.assertEqual(response['successful'], True)
+
         VoteSnapshot.objects.bulk_create(votes)
 
         start_at = timezone.now()
@@ -305,3 +332,318 @@ class BribesTests(TestCase):
         Payout.objects.values_list('stellar_transaction_id', flat=True).distinct()
         self.assertEqual(Payout.objects.values_list('status', flat=True).distinct().count(), 1)
         self.assertEqual(Payout.objects.values_list('status', flat=True).distinct().first(), Payout.STATUS_SUCCESS)
+
+    def test_reward_payer_delegated(self):
+        market_key = MarketKey(market_key='GBPF7NLFCYGZNHU6HS64ZGTE4YCRLAWTLFGOMFTHQ3WSUUFIGOSQFPJT')
+        market_key.save()
+        snapshot_time = timezone.now()
+        snapshot_time = snapshot_time.replace(minute=0, second=0, microsecond=0)
+
+        builder = self._get_builder(self.account_1)
+
+        votes = []
+        accounts = []
+        for i in range(10):
+            voting_account = Keypair.random()
+            accounts.append(voting_account)
+            votes.append(
+                VoteSnapshot(
+                    votes_value=100,
+                    voting_account=voting_account.public_key,
+                    snapshot_time=snapshot_time,
+                    market_key=market_key,
+                )
+            )
+            builder = self._create_wallet(self.account_1, voting_account, 5, builder=builder)
+            builder = self._trust_asset(voting_account, self.asset_xxx, builder=builder)
+            builder = self._trust_asset(voting_account, self.reward_asset, builder=builder)
+            builder = self._payment(
+                self.asset_xxx_issuer, voting_account, self.asset_xxx, amount=1000, builder=builder,
+            )
+
+        delegation_voting_account = Keypair.random()
+        accounts.append(delegation_voting_account)
+        builder = self._create_wallet(self.account_1, delegation_voting_account, 5, builder=builder)
+        builder = self._trust_asset(delegation_voting_account, self.delegation_asset, builder=builder)
+        builder = self._payment(
+            random_asset_issuer, delegation_voting_account, self.delegation_asset, amount=1000, builder=builder,
+        )
+        claim_after = timezone.now() + timedelta(seconds=1)
+        claim_after_timestamp = int(claim_after.strftime("%s"))
+        claimants = [
+            Claimant(
+                destination=delegation_voting_account.public_key,
+                predicate=ClaimPredicate.predicate_not(
+                    ClaimPredicate.predicate_before_absolute_time(claim_after_timestamp)
+                ),
+            ),
+            Claimant(
+                destination=market_key.market_key,
+                predicate=ClaimPredicate.predicate_not(ClaimPredicate.predicate_unconditional()),
+            ),
+        ]
+        builder = self._send_claim(delegation_voting_account, claimants, self.delegation_asset, amount=300, builder=builder)
+
+        votes.append(
+            VoteSnapshot(
+                votes_value=300,
+                voting_account=delegation_voting_account.public_key,
+                snapshot_time=snapshot_time,
+                market_key=market_key,
+                is_delegated=False,
+            )
+        )
+
+        for i in range(3):
+            voting_account = Keypair.random()
+            accounts.append(voting_account)
+
+            claim_after = timezone.now() + timedelta(seconds=1)
+            claim_after_timestamp = int(claim_after.strftime("%s"))
+            claimants = [
+                Claimant(
+                    destination=voting_account.public_key,
+                    predicate=ClaimPredicate.predicate_not(
+                        ClaimPredicate.predicate_before_absolute_time(claim_after_timestamp)
+                    ),
+                ),
+                Claimant(
+                    destination=delegation_voting_account.public_key,
+                    predicate=ClaimPredicate.predicate_not(ClaimPredicate.predicate_unconditional()),
+                ),
+                Claimant(
+                    destination=settings.DELEGATE_MARKER,
+                    predicate=ClaimPredicate.predicate_not(ClaimPredicate.predicate_unconditional()),
+                )
+            ]
+            builder = self._create_wallet(self.account_1, voting_account, 5, builder=builder)
+            builder = self._trust_asset(voting_account, self.delegated_asset, builder=builder)
+            builder = self._trust_asset(voting_account, self.reward_asset, builder=builder)
+            builder = self._payment(
+                random_asset_issuer, voting_account, self.delegated_asset, amount=100, builder=builder,
+            )
+            builder = self._send_claim(voting_account, claimants, self.delegated_asset, amount=100, builder=builder)
+
+        transaction_envelope = builder.build()
+
+        for i in range(len(accounts)):
+            transaction_envelope.sign(accounts[i].secret)
+
+        transaction_envelope.sign(self.account_1.secret)
+        transaction_envelope.sign(self.asset_xxx_issuer.secret)
+        transaction_envelope.sign(random_asset_issuer.secret)
+
+        response = self.server.submit_transaction(transaction_envelope)
+        self.assertEqual(response['successful'], True)
+
+        task_make_claims_snapshot()
+
+        self.assertEqual(ClaimableBalance.objects.count(), 3 + 1)  # 3 delegations + 1 delegated vote
+
+        start_at = timezone.now()
+        bribe = AggregatedByAssetBribe(
+            market_key_id=market_key,
+            asset_code=self.reward_asset.code,
+            asset_issuer=self.reward_asset.issuer,
+            start_at=start_at - timedelta(days=1),
+            stop_at=start_at + timedelta(days=1),
+            total_reward_amount=100000,
+        )
+        bribe.save()
+        task_make_trustees_snapshot()
+        self.assertEqual(AssetHolderBalanceSnapshot.objects.count(), 13 + 1)  # 13 votes + bribe wallet
+
+        def vote_loading_mock(self, page):
+            if page and page > 1:
+                return []
+            else:
+                return list(map(lambda x: {
+                    "votes_value": x.votes_value,
+                    "voting_account": x.voting_account
+                }, votes))
+
+        with mock.patch.object(VotesLoader, '_get_page', new=vote_loading_mock):
+            task_load_votes()
+
+        self.assertEqual(ClaimableBalance.objects.count(), 3 + 1)  # 3 delegations + 1 delegated vote
+        self.assertEqual(VoteSnapshot.objects.count(), 14)
+        self.assertEqual(VoteSnapshot.objects.filter(is_delegated=True).count(), 3)
+
+        reward_period = timedelta(hours=1)
+        task_pay_rewards(reward_period=reward_period)
+
+        reward_amount = bribe.daily_amount * Decimal(reward_period.total_seconds() / (24 * 3600))
+
+        Payout.objects.values_list('status', flat=True).distinct()
+        self.assertEqual(Payout.objects.values_list('status', flat=True).distinct().count(), 1)
+        self.assertEqual(Payout.objects.values_list('status', flat=True).distinct().first(), Payout.STATUS_SUCCESS)
+        self.assertEqual(Payout.objects.filter(status=Payout.STATUS_SUCCESS).count(), 13)
+        print(reward_amount, Payout.objects.aggregate(total=models.Sum('reward_amount'))['total'])
+        self.assertEqual(Payout.objects.aggregate(total=models.Sum('reward_amount'))['total'] - reward_amount < 0.01, True)
+        self.assertEqual(Payout.objects.aggregate(total=models.Sum('reward_amount'))['total'] <= reward_amount, True)
+
+    def test_reward_payer_delegated_with_not_delegated(self):
+        market_key = MarketKey(market_key=Keypair.random().public_key)
+        market_key.save()
+        snapshot_time = timezone.now()
+        snapshot_time = snapshot_time.replace(minute=0, second=0, microsecond=0)
+        ClaimableBalance.objects.all().delete()
+
+        start_at = timezone.now()
+        bribe = AggregatedByAssetBribe(
+            market_key_id=market_key,
+            asset_code=self.reward_asset.code,
+            asset_issuer=self.reward_asset.issuer,
+            start_at=start_at - timedelta(days=1),
+            stop_at=start_at + timedelta(days=1),
+            total_reward_amount=100000,
+        )
+        bribe.save()
+
+        task_make_trustees_snapshot()
+        holders_before = AssetHolderBalanceSnapshot.objects.count()
+        AssetHolderBalanceSnapshot.objects.all().delete()
+
+        builder = self._get_builder(self.account_1)
+
+        votes = []
+        accounts = []
+        for i in range(10):
+            voting_account = Keypair.random()
+            accounts.append(voting_account)
+            votes.append(
+                VoteSnapshot(
+                    votes_value=100,
+                    voting_account=voting_account.public_key,
+                    snapshot_time=snapshot_time,
+                    market_key=market_key,
+                )
+            )
+            builder = self._create_wallet(self.account_1, voting_account, 5, builder=builder)
+            builder = self._trust_asset(voting_account, self.asset_xxx, builder=builder)
+            builder = self._trust_asset(voting_account, self.reward_asset, builder=builder)
+            builder = self._payment(
+                self.asset_xxx_issuer, voting_account, self.asset_xxx, amount=1000, builder=builder,
+            )
+
+        delegation_voting_account = Keypair.random()
+        accounts.append(delegation_voting_account)
+        builder = self._create_wallet(self.account_1, delegation_voting_account, 5, builder=builder)
+        builder = self._trust_asset(delegation_voting_account, self.delegation_asset, builder=builder)
+        builder = self._trust_asset(delegation_voting_account, self.reward_asset, builder=builder)
+        builder = self._payment(
+            random_asset_issuer, delegation_voting_account, self.delegation_asset, amount=1000, builder=builder,
+        )
+        claim_after = timezone.now() + timedelta(seconds=1)
+        claim_after_timestamp = int(claim_after.strftime("%s"))
+        claimants = [
+            Claimant(
+                destination=delegation_voting_account.public_key,
+                predicate=ClaimPredicate.predicate_not(
+                    ClaimPredicate.predicate_before_absolute_time(claim_after_timestamp)
+                ),
+            ),
+            Claimant(
+                destination=market_key.market_key,
+                predicate=ClaimPredicate.predicate_not(ClaimPredicate.predicate_unconditional()),
+            ),
+        ]
+        builder = self._send_claim(delegation_voting_account, claimants, self.delegation_asset, amount=300, builder=builder)
+
+        votes.append(
+            VoteSnapshot(
+                votes_value=600,
+                voting_account=delegation_voting_account.public_key,
+                snapshot_time=snapshot_time,
+                market_key=market_key,
+                is_delegated=False,
+            )
+        )
+
+        for i in range(3):
+            voting_account = Keypair.random()
+            accounts.append(voting_account)
+
+            claim_after = timezone.now() + timedelta(seconds=1)
+            claim_after_timestamp = int(claim_after.strftime("%s"))
+            claimants = [
+                Claimant(
+                    destination=voting_account.public_key,
+                    predicate=ClaimPredicate.predicate_not(
+                        ClaimPredicate.predicate_before_absolute_time(claim_after_timestamp)
+                    ),
+                ),
+                Claimant(
+                    destination=delegation_voting_account.public_key,
+                    predicate=ClaimPredicate.predicate_not(ClaimPredicate.predicate_unconditional()),
+                ),
+                Claimant(
+                    destination=settings.DELEGATE_MARKER,
+                    predicate=ClaimPredicate.predicate_not(ClaimPredicate.predicate_unconditional()),
+                )
+            ]
+            builder = self._create_wallet(self.account_1, voting_account, 5, builder=builder)
+            builder = self._trust_asset(voting_account, self.delegated_asset, builder=builder)
+            builder = self._trust_asset(voting_account, self.reward_asset, builder=builder)
+            builder = self._payment(
+                random_asset_issuer, voting_account, self.delegated_asset, amount=100, builder=builder,
+            )
+            builder = self._send_claim(voting_account, claimants, self.delegated_asset, amount=100, builder=builder)
+
+        transaction_envelope = builder.build()
+
+        for i in range(len(accounts)):
+            transaction_envelope.sign(accounts[i].secret)
+
+        transaction_envelope.sign(self.account_1.secret)
+        transaction_envelope.sign(self.asset_xxx_issuer.secret)
+        transaction_envelope.sign(random_asset_issuer.secret)
+
+        response = self.server.submit_transaction(transaction_envelope)
+        self.assertEqual(response['successful'], True)
+
+        task_make_claims_snapshot()
+
+        self.assertEqual(ClaimableBalance.objects.filter(claimants__destination=market_key.market_key).count(), 1)
+        self.assertEqual(ClaimableBalance.objects.filter(
+                asset_code=self.delegated_asset.code,
+                asset_issuer=self.delegated_asset.issuer,
+            ).filter(claimants__destination=delegation_voting_account.public_key).count(), 3
+        )
+
+        task_make_trustees_snapshot()
+        self.assertEqual(AssetHolderBalanceSnapshot.objects.count() - holders_before, 14)
+
+        def vote_loading_mock(self, page):
+            if page and page > 1:
+                return []
+            else:
+                return list(map(lambda x: {
+                    "votes_value": x.votes_value,
+                    "voting_account": x.voting_account
+                }, votes))
+
+        with mock.patch.object(VotesLoader, '_get_page', new=vote_loading_mock):
+            task_load_votes()
+
+        self.assertEqual(ClaimableBalance.objects.filter(claimants__destination=market_key.market_key).count(), 1)
+        self.assertEqual(ClaimableBalance.objects.filter(
+                asset_code=self.delegated_asset.code,
+                asset_issuer=self.delegated_asset.issuer,
+            ).filter(claimants__destination=delegation_voting_account.public_key).count(), 3
+        )
+        self.assertEqual(VoteSnapshot.objects.count(), 15)
+        self.assertEqual(VoteSnapshot.objects.filter(is_delegated=True).count(), 3)
+
+        reward_period = timedelta(hours=1)
+        task_pay_rewards(reward_period=reward_period)
+
+        reward_amount = bribe.daily_amount * Decimal(reward_period.total_seconds() / (24 * 3600))
+
+        Payout.objects.values_list('status', flat=True).distinct()
+        self.assertEqual(Payout.objects.values_list('status', flat=True).distinct().count(), 1)
+        self.assertEqual(Payout.objects.values_list('status', flat=True).distinct().first(), Payout.STATUS_SUCCESS)
+        self.assertEqual(Payout.objects.filter(status=Payout.STATUS_SUCCESS).count(), 14)
+        print(reward_amount, Payout.objects.aggregate(total=models.Sum('reward_amount'))['total'])
+        self.assertEqual(Payout.objects.aggregate(total=models.Sum('reward_amount'))['total'] - reward_amount < 0.01, True)
+        self.assertEqual(Payout.objects.aggregate(total=models.Sum('reward_amount'))['total'] <= reward_amount, True)

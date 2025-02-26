@@ -5,7 +5,6 @@ from django.core.cache import cache
 from django.db import IntegrityError
 from django.utils import timezone
 
-from datetime import timedelta
 from dateutil.parser import parse as date_parse
 from stellar_sdk import Asset
 
@@ -21,12 +20,6 @@ class BribesLoader(object):
         self.last_id_cache_key = None
         self.last_id_cache_timeout = last_id_cache_timeout
         self.logger = logging.getLogger('BribesLoader')
-
-    def load_last_event_id(self) -> str:
-        paging_token = cache.get(self.last_id_cache_key, None)
-
-        if paging_token:
-            return paging_token
 
     def load_last_event_id(self) -> str:
         paging_token = cache.get(self.last_id_cache_key, None)
@@ -52,7 +45,7 @@ class BribesLoader(object):
         last_id = self.load_last_event_id()
         if last_id:
             builder = builder.cursor(last_id)
-        
+
         return builder.call()['_embedded']['records']
 
     def _is_market_key_predicate_correct(self, predicate: dict):
@@ -94,7 +87,7 @@ class BribesLoader(object):
 
         balance_created_at = bribe['last_modified_time']
         if len(claimants) != 2:
-            self.logger.error('Invalid claimants %s',  bribe['id'])
+            self.logger.error('Invalid claimants %s', bribe['id'])
             return None
 
         bribe_collector_claim, market_key_claim = sorted(

@@ -1,4 +1,65 @@
+from django.conf import settings
 from django.db import models
+
+from stellar_sdk import Asset
+from stellar_sdk import Claimant as SDKClaimant
+from stellar_sdk import ClaimPredicate
+from stellar_sdk.xdr import ClaimPredicate as XDRClaimPredicate
+
+
+class ClaimableBalance(models.Model):
+    claimable_balance_id = models.CharField(max_length=96, primary_key=True)
+
+    asset_code = models.CharField(max_length=12)
+    asset_issuer = models.CharField(max_length=56)
+
+    amount = models.DecimalField(max_digits=20, decimal_places=7, default=0)
+    sponsor = models.CharField(max_length=56, db_index=True)
+
+    owner = models.CharField(max_length=56, db_index=True)
+
+    paging_token = models.CharField(max_length=32, blank=True)
+    last_modified_time = models.DateTimeField(null=True)
+    last_modified_ledger = models.PositiveIntegerField()
+
+    loaded_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return "ClaimableBalance: {}...{}".format(self.claimable_balance_id[:6], self.claimable_balance_id[-6:])
+
+    @property
+    def asset(self):
+        return Asset(code=self.asset_code, issuer=self.asset_issuer)
+
+    @property
+    def balance_claimants(self):
+        result = []
+        for claimant in self.claimants.all():
+            result.append(
+                SDKClaimant(
+                    destination=claimant.destination,
+                    predicate=claimant.predicate,
+                )
+            )
+        return result
+
+
+class Claimant(models.Model):
+    destination = models.CharField(max_length=56, db_index=True)
+
+    raw_predicate = models.TextField()
+
+    claimable_balance = models.ForeignKey('ClaimableBalance', on_delete=models.CASCADE, related_name='claimants')
+
+    def __str__(self):
+        return "Claimant {}...{} for {}...{}".format(
+            self.destination[:6], self.destination[-6:], self.claimable_balance_id[:6], self.claimable_balance_id[-6:],
+        )
+
+    @property
+    def predicate(self):
+        return ClaimPredicate.from_xdr_object(XDRClaimPredicate.from_xdr(self.raw_predicate))
 
 
 class VoteSnapshot(models.Model):
@@ -6,6 +67,9 @@ class VoteSnapshot(models.Model):
 
     votes_value = models.DecimalField(max_digits=20, decimal_places=7)
     voting_account = models.CharField(max_length=56, db_index=True)
+
+    is_delegated = models.BooleanField(default=False)
+    has_delegation = models.BooleanField(default=False)
 
     snapshot_time = models.DateField(db_index=True)
 
@@ -15,7 +79,7 @@ class VoteSnapshot(models.Model):
         )
 
     class Meta:
-        unique_together = ('snapshot_time', 'market_key', 'voting_account')
+        unique_together = ('snapshot_time', 'market_key', 'voting_account', 'is_delegated', 'has_delegation')
 
 
 class Payout(models.Model):

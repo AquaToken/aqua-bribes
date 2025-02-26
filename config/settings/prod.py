@@ -4,6 +4,7 @@ from sentry_sdk.integrations.celery import CeleryIntegration
 from sentry_sdk.integrations.django import DjangoIntegration
 
 from config.settings.base import *  # noqa: F403
+from config.settings.utils import parse_delegatable_asset_config
 
 environ.Env.read_env()
 
@@ -193,3 +194,10 @@ REWARD_ASSET_CODE = env('REWARD_ASSET_CODE')
 REWARD_ASSET_ISSUER = env('REWARD_ASSET_ISSUER')
 
 REWARD_SERVER_AUTHORIZATION_TOKEN = env('REWARD_SERVER_AUTHORIZATION_TOKEN')
+
+DELEGATE_MARKER = env('DELEGATE_MARKER')
+DELEGATABLE_ASSETS = [
+    parse_delegatable_asset_config(config)
+    for config in env.list('DELEGABLE_ASSETS')
+]
+

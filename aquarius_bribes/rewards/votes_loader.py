@@ -1,9 +1,13 @@
-from django.db import IntegrityError
+from datetime import timedelta
+from decimal import ROUND_DOWN, Decimal
+
+from django.conf import settings
+from django.db import IntegrityError, models
 
 import requests
 
-from aquarius_bribes.rewards.models import VoteSnapshot
-from aquarius_bribes.bribes.utils import get_horizon
+from aquarius_bribes.rewards.models import ClaimableBalance, VoteSnapshot
+from aquarius_bribes.utils.assets import get_asset_string, parse_asset_string
 
 
 class VotesLoader(object):
@@ -28,6 +32,87 @@ class VotesLoader(object):
             market_key_id=self.market_key,
         )
 
+    def _get_delegated_asset_filter(self):
+        asset_filter = models.Q()
+        for _, delegated_asset in settings.DELEGATABLE_ASSETS:
+            asset_filter |= models.Q(
+                asset_code=delegated_asset.code,
+                asset_issuer=delegated_asset.issuer,
+            )
+        return asset_filter
+
+    def _get_delegatable_asset_filter(self):
+        asset_filter = models.Q()
+        for asset, _ in settings.DELEGATABLE_ASSETS:
+            asset_filter |= models.Q(
+                asset_code=asset.code,
+                asset_issuer=asset.issuer,
+            )
+        return asset_filter
+
+    def has_delegated_votes(self, voting_account):
+        asset_filter = self._get_delegated_asset_filter()
+
+        date = self.snapshot_time.replace(hour=0)
+        return ClaimableBalance.objects.filter(
+            loaded_at__gte=date, loaded_at__lt=date + timedelta(days=1),
+        ).filter(owner=voting_account).filter(
+            asset_filter,
+        ).filter(claimants__destination=self.market_key).exists()
+
+    def process_delegated_vote(self, voting_account, votes_value):
+        votes = []
+
+        asset_filter = self._get_delegatable_asset_filter()
+
+        date = self.snapshot_time.replace(hour=0)
+        delegated_votes = ClaimableBalance.objects.filter(
+            loaded_at__gte=date, loaded_at__lt=date + timedelta(days=1),
+        ).filter(
+            asset_filter,
+        ).filter(claimants__destination=settings.DELEGATE_MARKER).filter(claimants__destination=voting_account)
+        total_delegated_votes = delegated_votes.aggregate(total_votes=models.Sum('amount'))['total_votes']
+
+        votes.append(
+            VoteSnapshot(
+                snapshot_time=self.snapshot_time,
+                votes_value=votes_value,
+                voting_account=voting_account,
+                market_key_id=self.market_key,
+                is_delegated=False,
+                has_delegation=True,
+            )
+        )
+
+        if votes_value > total_delegated_votes:
+            votes.append(
+                VoteSnapshot(
+                    snapshot_time=self.snapshot_time,
+                    votes_value=votes_value - total_delegated_votes,
+                    voting_account=voting_account,
+                    market_key_id=self.market_key,
+                    is_delegated=False,
+                    has_delegation=False,
+                )
+            )
+
+        for delegated_vote in delegated_votes:
+            votes.append(
+                VoteSnapshot(
+                    snapshot_time=self.snapshot_time,
+                    votes_value=Decimal(
+                        votes_value * delegated_vote.amount / total_delegated_votes,
+                    ).quantize(
+                        Decimal('0.0000001'), rounding=ROUND_DOWN,
+                    ),
+                    voting_account=delegated_vote.owner,
+                    market_key_id=self.market_key,
+                    is_delegated=True,
+                )
+            )
+
+        return votes
+
     def save_all_items(self, processed):
         try:
             VoteSnapshot.objects.bulk_create(processed, batch_size=5000)
@@ -45,9 +130,16 @@ class VotesLoader(object):
         while votes:
             parsed_votes = []
             for vote in votes:
-                parsed_votes.append(
-                    self.process_vote(vote)
-                )
+                # if vote['asset'] in delegated_assets:
+                if self.has_delegated_votes(vote['voting_account']):
+                    parsed_votes += self.process_delegated_vote(
+                        vote['voting_account'],
+                        vote['votes_value'],
+                    )
+                else:
+                    parsed_votes.append(
+                        self.process_vote(vote)
+                    )
 
             self.save_all_items(parsed_votes)
 

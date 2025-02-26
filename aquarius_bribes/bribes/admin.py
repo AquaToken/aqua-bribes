@@ -6,7 +6,8 @@ from aquarius_bribes.bribes.models import AggregatedByAssetBribe, Bribe
 @admin.register(Bribe)
 class BribeAdmin(admin.ModelAdmin):
     list_display = [
-        '__str__', 'status', 'short_asset', 'get_short_market_key', 'unlock_time', 'created_at', 'loaded_at', 'updated_at',
+        '__str__', 'status', 'short_asset', 'get_short_market_key',
+        'unlock_time', 'created_at', 'loaded_at', 'updated_at',
     ]
     list_filter = ['status',]
     readonly_fields = [

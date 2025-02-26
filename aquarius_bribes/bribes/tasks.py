@@ -1,8 +1,9 @@
+from datetime import timedelta
+
 from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
-from datetime import timedelta
 from stellar_sdk import Asset
 from stellar_sdk.exceptions import BaseHorizonError
 
@@ -10,7 +11,6 @@ from aquarius_bribes.bribes.bribe_processor import BribeProcessor
 from aquarius_bribes.bribes.exceptions import NoPathForConversionError
 from aquarius_bribes.bribes.loader import BribesLoader
 from aquarius_bribes.bribes.models import AggregatedByAssetBribe, Bribe
-from aquarius_bribes.bribes.utils import get_horizon
 from aquarius_bribes.taskapp import app as celery_app
 
 
@@ -23,14 +23,14 @@ def task_load_bribes():
 @celery_app.task(ignore_result=True, soft_time_limit=60 * 30, time_limit=60 * 35)
 def task_claim_bribes():
     ready_to_claim = Bribe.objects.filter(unlock_time__lte=timezone.now(), status=Bribe.STATUS_PENDING)
-    
+
     aqua = Asset(code=settings.REWARD_ASSET_CODE, issuer=settings.REWARD_ASSET_ISSUER)
     bribe_processor = BribeProcessor(settings.BRIBE_WALLET_ADDRESS, settings.BRIBE_WALLET_SIGNER, aqua)
 
     while ready_to_claim.count() > 0:
         for bribe in ready_to_claim:
             try:
-                response = bribe_processor.claim_and_convert(bribe)
+                bribe_processor.claim_and_convert(bribe)
                 bribe.update_active_period(timezone.now())
                 bribe.status = Bribe.STATUS_ACTIVE
                 bribe.save()
@@ -69,7 +69,6 @@ def task_claim_bribes():
 @celery_app.task(ignore_result=True, soft_time_limit=60 * 15, time_limit=60 * 15)
 def task_update_bribe_aqua_equivalent():
     now = timezone.now()
-    horizon = get_horizon()
     aqua = Asset(code=settings.REWARD_ASSET_CODE, issuer=settings.REWARD_ASSET_ISSUER)
     loader = BribesLoader(settings.BRIBE_WALLET_ADDRESS, settings.BRIBE_WALLET_SIGNER)
 
@@ -82,8 +81,6 @@ def task_update_bribe_aqua_equivalent():
 
 @celery_app.task(ignore_result=True, soft_time_limit=60 * 7, time_limit=60 * 10)
 def task_update_pending_bribe_aqua_equivalent():
-    now = timezone.now()
-    horizon = get_horizon()
     aqua = Asset(code=settings.REWARD_ASSET_CODE, issuer=settings.REWARD_ASSET_ISSUER)
     loader = BribesLoader(settings.BRIBE_WALLET_ADDRESS, settings.BRIBE_WALLET_SIGNER)
 

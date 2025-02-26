@@ -3,13 +3,10 @@ from typing import Dict, List
 from django.core.cache import cache
 
 from stellar_sdk import Asset
-from stellar_sdk.exceptions import (
-    BadResponseError,
-    ConnectionError,
-)
+from stellar_sdk.exceptions import BadResponseError, ConnectionError
 
-from aquarius_bribes.rewards.models import AssetHolderBalanceSnapshot
 from aquarius_bribes.bribes.utils import get_horizon
+from aquarius_bribes.rewards.models import AssetHolderBalanceSnapshot
 
 
 class TrusteesLoader(object):

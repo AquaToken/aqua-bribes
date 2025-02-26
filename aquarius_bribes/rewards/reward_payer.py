@@ -1,15 +1,13 @@
-from billiard.exceptions import SoftTimeLimitExceeded
 from datetime import timedelta
-from decimal import Decimal, ROUND_DOWN, ROUND_UP
+from decimal import ROUND_DOWN, ROUND_UP, Decimal
 from typing import List
 
 from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
-from stellar_sdk import Asset
+from billiard.exceptions import SoftTimeLimitExceeded
 from stellar_sdk.exceptions import BaseHorizonError, NotFoundError
-from stellar_sdk.server import Server
 from stellar_sdk.transaction_builder import TransactionBuilder, TransactionEnvelope
 
 from aquarius_bribes.bribes.utils import get_horizon
@@ -92,7 +90,7 @@ class BaseRewardPayer(object):
                 for payout in payouts:
                     payout.stellar_transaction_id = response['hash']
                 self.payout_class.objects.bulk_create(payouts)
-        except SoftTimeLimitExceeded as timeout_exc:
+        except SoftTimeLimitExceeded:
             for payout in payouts:
                 payout.stellar_transaction_id = transaction_envelope.hash_hex()
                 payout.status = self.payout_class.STATUS_FAILED
@@ -114,7 +112,9 @@ class BaseRewardPayer(object):
                     operation_fail_reasons = None
                 if not operation_fail_reasons:
                     if submit_exc.extras:
-                        operation_fail_reasons = submit_exc.extras.get('result_codes', {}).get('transaction', 'no_reason')
+                        operation_fail_reasons = submit_exc.extras.get('result_codes', {}).get(
+                            'transaction', 'no_reason',
+                        )
                     else:
                         operation_fail_reasons = 'no_reason'
 
@@ -151,7 +151,7 @@ class BaseRewardPayer(object):
             try:
                 tx_data = self.server.transactions().transaction(tx_hash).call()
 
-                if tx_data.get('successful', False) == True:
+                if tx_data.get('successful', False):
                     self.payout_class.objects.filter(
                         stellar_transaction_id=tx_hash,
                     ).update(status=self.payout_class.STATUS_SUCCESS)
@@ -187,7 +187,7 @@ class RewardPayer(BaseRewardPayer):
 
     def _clean_rewards(self, rewards):
         qs = rewards
-        
+
         failed_by_unkown_reason = self.payout_class.objects.filter(
             bribe=self.bribe, vote_snapshot__in=qs,
         ).exclude(message__in=[

@@ -1,27 +1,49 @@
+import random
+from datetime import timedelta
+from decimal import Decimal
+
 from django.conf import settings
 from django.core.cache import cache
 from django.db import models
 from django.utils import timezone
 
-import random
-
-from datetime import timedelta
-from decimal import Decimal, ROUND_UP
 from stellar_sdk import Asset
 
 from aquarius_bribes.bribes.models import AggregatedByAssetBribe
-from aquarius_bribes.rewards.votes_loader import VotesLoader
-from aquarius_bribes.rewards.models import AssetHolderBalanceSnapshot, VoteSnapshot
+from aquarius_bribes.rewards.claim_loader import ClaimLoader
+from aquarius_bribes.rewards.models import AssetHolderBalanceSnapshot, ClaimableBalance, VoteSnapshot
 from aquarius_bribes.rewards.reward_payer import RewardPayer
 from aquarius_bribes.rewards.trustees_loader import TrusteesLoader
 from aquarius_bribes.rewards.utils import SecuredWallet
+from aquarius_bribes.rewards.votes_loader import VotesLoader
 from aquarius_bribes.taskapp import app as celery_app
-
+from aquarius_bribes.utils.assets import get_asset_string
 
 DEFAULT_REWARD_PERIOD = timedelta(hours=24)
 PAYREWARD_TIME_LIMIT = timedelta(minutes=55)
 LOAD_VOTES_TASK_ACTIVE_KEY = 'LOAD_VOTES_TASK_ACTIVE_KEY'
 LOAD_TRUSTORS_TASK_ACTIVE_KEY = 'LOAD_TRUSTORS_TASK_ACTIVE_KEY'
+
+
+@celery_app.task(ignore_result=True)
+def task_make_claims_snapshot():
+    snapshot_time = timezone.now()
+    snapshot_time = snapshot_time.replace(minute=0, second=0, microsecond=0, hour=0)
+
+    for asset, delegated_asset in settings.DELEGATABLE_ASSETS:
+        ClaimableBalance.objects.filter(asset_code=asset.code, asset_issuer=asset.issuer).filter(
+            loaded_at__gte=snapshot_time,
+            loaded_at__lt=snapshot_time + timedelta(days=1),
+        ).delete()
+        loader = ClaimLoader(asset, settings.DELEGATE_MARKER)
+        loader.make_claim_spanshot()
+
+        ClaimableBalance.objects.filter(asset_code=delegated_asset.code, asset_issuer=delegated_asset.issuer).filter(
+            loaded_at__gte=snapshot_time,
+            loaded_at__lt=snapshot_time + timedelta(days=1),
+        ).delete()
+        loader = ClaimLoader(delegated_asset)
+        loader.make_claim_spanshot()
 
 
 @celery_app.task(ignore_result=True, soft_time_limit=60 * 20, time_limit=60 * 30)
@@ -39,6 +61,8 @@ def task_load_votes(snapshot_time=None):
     if snapshot_time is None:
         snapshot_time = timezone.now()
         snapshot_time = snapshot_time.replace(minute=0, second=0, microsecond=0)
+
+    task_make_claims_snapshot()
 
     markets_with_active_bribes = AggregatedByAssetBribe.objects.filter(
         start_at__lte=snapshot_time, stop_at__gt=snapshot_time,
@@ -102,7 +126,7 @@ def task_pay_rewards(snapshot_time=None, reward_period=DEFAULT_REWARD_PERIOD):
 
     for bribe in active_bribes:
         votes = VoteSnapshot.objects.filter(
-             snapshot_time=snapshot_time.date(), market_key=bribe.market_key,
+            snapshot_time=snapshot_time.date(), market_key=bribe.market_key,
         )
 
         if bribe.asset.type != Asset.native().type:
@@ -114,6 +138,8 @@ def task_pay_rewards(snapshot_time=None, reward_period=DEFAULT_REWARD_PERIOD):
                     asset_issuer=bribe.asset_issuer,
                 ).values_list('account'),
             )
+
+        votes = votes.exclude(has_delegation=True)
 
         if votes.count() > 0:
             reward_amount = bribe.daily_amount * Decimal(reward_period.total_seconds() / (24 * 3600))

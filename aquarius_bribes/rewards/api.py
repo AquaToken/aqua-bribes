@@ -12,7 +12,7 @@ from aquarius_bribes.rewards.tasks import LOAD_VOTES_TASK_ACTIVE_KEY, task_load_
 
 
 class RunVotesSnapshotAPIView(GenericAPIView):
-    authorization_token  = django_settings.REWARD_SERVER_AUTHORIZATION_TOKEN
+    authorization_token = django_settings.REWARD_SERVER_AUTHORIZATION_TOKEN
     permission_classes = (AllowAny, )
 
     def post(self, request, *args, **kwargs):
