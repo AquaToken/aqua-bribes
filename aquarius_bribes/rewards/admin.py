@@ -1,7 +1,7 @@
 from django.contrib import admin
 
 from aquarius_bribes.bribes.models import AggregatedByAssetBribe
-from aquarius_bribes.rewards.models import AssetHolderBalanceSnapshot, Payout, VoteSnapshot
+from aquarius_bribes.rewards.models import AssetHolderBalanceSnapshot, ClaimableBalance, Payout, VoteSnapshot
 
 
 class AssetListFilter(admin.SimpleListFilter):
@@ -54,3 +54,15 @@ class AssetHolderBalanceSnapshotAdmin(admin.ModelAdmin):
         return '{}...{}'.format(obj.asset_issuer[:4], obj.asset_issuer[-4:])
     get_asset_issuer.short_description = 'Asset issuer'
     get_asset_issuer.admin_order_field = '-asset_issuer'
+
+
+@admin.register(ClaimableBalance)
+class ClaimableBalanceAdmin(admin.ModelAdmin):
+    list_display = ('claimable_balance_id', 'asset_code', 'amount', 'sponsor', 'loaded_at', 'updated_at')
+    readonly_fields = (
+        'claimable_balance_id', 'asset_code', 'asset_issuer', 'amount',
+        'sponsor', 'paging_token', 'last_modified_time', 'last_modified_ledger',
+        'loaded_at', 'updated_at',
+    )
+    list_filter = ('loaded_at', 'updated_at', 'asset_code')
+    search_fields = ('=sponsor', '=claimants__destination', '=claimable_balance_id')
