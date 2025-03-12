@@ -198,6 +198,6 @@ REWARD_SERVER_AUTHORIZATION_TOKEN = env('REWARD_SERVER_AUTHORIZATION_TOKEN')
 DELEGATE_MARKER = env('DELEGATE_MARKER')
 DELEGATABLE_ASSETS = [
     parse_delegatable_asset_config(config)
-    for config in env.list('DELEGABLE_ASSETS')
+    for config in env.list('DELEGATABLE_ASSETS')
 ]
 
