@@ -62,6 +62,7 @@ class VotesLoader(object):
 
     def process_delegated_vote(self, voting_account, votes_value):
         votes = []
+        votes_value = Decimal(votes_value)
 
         asset_filter = self._get_delegatable_asset_filter()
 
