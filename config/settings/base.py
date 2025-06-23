@@ -212,6 +212,7 @@ BRIBE_WALLET_SIGNER = NotImplemented
 REWARD_ASSET_CODE = NotImplemented
 REWARD_ASSET_ISSUER = NotImplemented
 
+AMM_PROTOCOL_BRIBES_ADMIN_ADDRESS = NotImplemented
 
 CONSTANCE_CONFIG = {
     'CONVERTATION_AMOUNT': (Decimal('100000'), 'Amount in aqua needed for bribe accept', Decimal),
