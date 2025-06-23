@@ -46,8 +46,8 @@ class Bribe(models.Model):
     sponsor = models.CharField(max_length=56)
     amount = models.DecimalField(max_digits=20, decimal_places=7)
 
-    is_amm_protocol_bribe = models.BooleanField(default=False, help_text="AMM Protocol bribes are created using a "
-                                                                         "fraction of collected protocol fees")
+    is_amm_protocol = models.BooleanField(default=False, help_text="AMM Protocol bribes are created using a "
+                                                                   "fraction of collected protocol fees")
 
     aqua_total_reward_amount_equivalent = models.DecimalField(max_digits=20, decimal_places=7, null=True)
 

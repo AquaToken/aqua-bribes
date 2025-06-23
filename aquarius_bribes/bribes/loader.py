@@ -71,7 +71,7 @@ class BribesLoader(object):
         else:
             return paths[0]['destination_amount']
 
-    def _get_is_amm_protocol_bribe(self, sponsor: str) -> bool:
+    def _get_is_amm_protocol(self, sponsor: str) -> bool:
         # Check if the bribe is an AMM protocol bribe using the sponsor creator address
         sponsor_info = self.horizon.accounts().account_id(sponsor).call()
         return sponsor_info.get("sponsor") == settings.AMM_PROTOCOL_BRIBES_ADMIN_ADDRESS
@@ -149,7 +149,7 @@ class BribesLoader(object):
             status=status,
             message='\n'.join(messages),
             aqua_total_reward_amount_equivalent=self._get_asset_equivalent(amount, asset, aqua),
-            is_amm_protocol_bribe=self._get_is_amm_protocol_bribe(sponsor),
+            is_amm_protocol=self._get_is_amm_protocol(sponsor),
         )
 
         bribe.update_active_period()
