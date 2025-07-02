@@ -30,5 +30,5 @@ class BribeSerializer(serializers.ModelSerializer):
         fields = (
             'market_key', 'asset_issuer', 'asset_code', 'start_at', 'stop_at',
             'unlock_time', 'sponsor', 'amount', 'claimable_balance_id', 'created_at',
-            'aqua_total_reward_amount_equivalent',
+            'aqua_total_reward_amount_equivalent', 'is_amm_protocol',
         )
