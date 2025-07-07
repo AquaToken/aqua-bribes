@@ -129,6 +129,7 @@ class VotesLoader(object):
                         ).quantize(
                             Decimal('0.0000001'), rounding=ROUND_DOWN,
                         ),
+                        delegate_owner=voting_account,
                         voting_account=delegated_vote.owner,
                         market_key_id=self.market_key,
                         is_delegated=True,

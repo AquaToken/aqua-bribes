@@ -70,6 +70,7 @@ class VoteSnapshot(models.Model):
 
     is_delegated = models.BooleanField(default=False)
     has_delegation = models.BooleanField(default=False)
+    delegate_owner = models.CharField(max_length=56, db_index=True, default=None, blank=True, null=True)
 
     snapshot_time = models.DateField(db_index=True)
 
@@ -79,7 +80,10 @@ class VoteSnapshot(models.Model):
         )
 
     class Meta:
-        unique_together = ('snapshot_time', 'market_key', 'voting_account', 'is_delegated', 'has_delegation')
+        unique_together = (
+            'snapshot_time', 'market_key', 'voting_account',
+            'is_delegated', 'has_delegation', 'delegate_owner',
+        )
 
 
 class Payout(models.Model):
