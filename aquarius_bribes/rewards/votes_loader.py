@@ -78,6 +78,9 @@ class VotesLoader(object):
         ).filter(claimants__destination=settings.DELEGATE_MARKER)
         total_delegated_votes = delegated_votes.aggregate(total_votes=models.Sum('amount'))['total_votes']
 
+        if total_delegated_votes is None:
+            total_delegated_votes = Decimal(0)
+
         votes.append(
             VoteSnapshot(
                 snapshot_time=self.snapshot_time,
@@ -89,7 +92,7 @@ class VotesLoader(object):
             )
         )
 
-        if total_delegated_votes and votes_value > total_delegated_votes:
+        if votes_value > total_delegated_votes:
             votes.append(
                 VoteSnapshot(
                     snapshot_time=self.snapshot_time,
@@ -102,20 +105,21 @@ class VotesLoader(object):
             )
             votes_value = total_delegated_votes
 
-        for delegated_vote in delegated_votes:
-            votes.append(
-                VoteSnapshot(
-                    snapshot_time=self.snapshot_time,
-                    votes_value=Decimal(
-                        votes_value * delegated_vote.amount / total_delegated_votes,
-                    ).quantize(
-                        Decimal('0.0000001'), rounding=ROUND_DOWN,
-                    ),
-                    voting_account=delegated_vote.owner,
-                    market_key_id=self.market_key,
-                    is_delegated=True,
+        if total_delegated_votes > 0:
+            for delegated_vote in delegated_votes:
+                votes.append(
+                    VoteSnapshot(
+                        snapshot_time=self.snapshot_time,
+                        votes_value=Decimal(
+                            votes_value * delegated_vote.amount / total_delegated_votes,
+                        ).quantize(
+                            Decimal('0.0000001'), rounding=ROUND_DOWN,
+                        ),
+                        voting_account=delegated_vote.owner,
+                        market_key_id=self.market_key,
+                        is_delegated=True,
+                    )
                 )
-            )
 
         return votes
 
