@@ -96,12 +96,14 @@ class VotesLoader(object):
                     has_delegation=False,
                 )
             )
+            votes_value = total_delegated_votes
 
         for delegated_vote in delegated_votes:
             votes.append(
                 VoteSnapshot(
                     snapshot_time=self.snapshot_time,
                     votes_value=Decimal(
+                        votes_value * delegated_vote.amount / total_delegated_votes,
                         delegated_vote.amount,
                     ).quantize(
                         Decimal('0.0000001'), rounding=ROUND_DOWN,
