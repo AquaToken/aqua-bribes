@@ -104,7 +104,6 @@ class VotesLoader(object):
                     snapshot_time=self.snapshot_time,
                     votes_value=Decimal(
                         votes_value * delegated_vote.amount / total_delegated_votes,
-                        delegated_vote.amount,
                     ).quantize(
                         Decimal('0.0000001'), rounding=ROUND_DOWN,
                     ),
