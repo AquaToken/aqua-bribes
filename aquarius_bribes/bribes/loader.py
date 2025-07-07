@@ -72,9 +72,9 @@ class BribesLoader(object):
             return paths[0]['destination_amount']
 
     def _get_is_amm_protocol(self, sponsor: str) -> bool:
-        # Check if the bribe is an AMM protocol bribe using the sponsor creator address
-        sponsor_info = self.horizon.accounts().account_id(sponsor).call()
-        return sponsor_info.get("sponsor") == settings.AMM_PROTOCOL_BRIBES_ADMIN_ADDRESS
+        # Check if the bribe is an AMM protocol bribe. they are created by separated accounts (per tokens set)
+        # but claimable balance reserve is sponsored by the aquarius protocol fees admin, so compare to it
+        return sponsor == settings.AMM_PROTOCOL_BRIBES_ADMIN_ADDRESS
 
     def parse(self, bribe):
         amount = bribe['amount']
