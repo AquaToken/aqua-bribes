@@ -35,7 +35,7 @@ def task_make_claims_snapshot():
             loaded_at__gte=snapshot_time,
             loaded_at__lt=snapshot_time + timedelta(days=1),
         ).delete()
-        loader = ClaimLoader(asset, settings.DELEGATE_MARKER)
+        loader = ClaimLoader(asset)
         loader.make_claim_spanshot()
 
         ClaimableBalance.objects.filter(asset_code=delegated_asset.code, asset_issuer=delegated_asset.issuer).filter(

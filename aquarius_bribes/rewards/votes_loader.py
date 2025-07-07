@@ -7,6 +7,7 @@ from django.db import IntegrityError, models
 import requests
 
 from aquarius_bribes.rewards.models import ClaimableBalance, VoteSnapshot
+from aquarius_bribes.rewards.utils import _get_not_unconditinal_predicate
 from aquarius_bribes.utils.assets import get_asset_string, parse_asset_string
 
 
@@ -70,8 +71,11 @@ class VotesLoader(object):
         delegated_votes = ClaimableBalance.objects.filter(
             loaded_at__gte=date, loaded_at__lt=date + timedelta(days=1),
         ).filter(
+            claimants__raw_predicate=_get_not_unconditinal_predicate(),
+            claimants__destination=voting_account
+        ).filter(
             asset_filter,
-        ).filter(claimants__destination=settings.DELEGATE_MARKER).filter(claimants__destination=voting_account)
+        ).filter(claimants__destination=settings.DELEGATE_MARKER)
         total_delegated_votes = delegated_votes.aggregate(total_votes=models.Sum('amount'))['total_votes']
 
         votes.append(
