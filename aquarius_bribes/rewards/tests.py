@@ -166,7 +166,7 @@ class BribesTests(TestCase):
         response = self.server.submit_transaction(transaction_envelope)
         self.assertEqual(response['successful'], True)
 
-    def __________test_votes_loader(self):
+    def test_votes_loader(self):
         market_key = MarketKey(market_key='GBPF7NLFCYGZNHU6HS64ZGTE4YCRLAWTLFGOMFTHQ3WSUUFIGOSQFPJT')
         market_key.save()
         snapshot_time = timezone.now()
@@ -183,7 +183,7 @@ class BribesTests(TestCase):
 
         self.assertEqual(VoteSnapshot.objects.count(), response.json()['count'])
 
-    def __________test_reward_payer(self):
+    def test_reward_payer(self):
         market_key = MarketKey(market_key='GBPF7NLFCYGZNHU6HS64ZGTE4YCRLAWTLFGOMFTHQ3WSUUFIGOSQFPJT')
         market_key.save()
         snapshot_time = timezone.now()
@@ -258,7 +258,7 @@ class BribesTests(TestCase):
         self.assertEqual(Payout.objects.values_list('status', flat=True).distinct().count(), 1)
         self.assertEqual(Payout.objects.values_list('status', flat=True).distinct().first(), Payout.STATUS_SUCCESS)
 
-    def __________test_reward_payer_with_native_asset(self):
+    def test_reward_payer_with_native_asset(self):
         market_key = MarketKey(market_key='GBPF7NLFCYGZNHU6HS64ZGTE4YCRLAWTLFGOMFTHQ3WSUUFIGOSQFPJT')
         market_key.save()
         snapshot_time = timezone.now()
@@ -341,6 +341,20 @@ class BribesTests(TestCase):
 
         builder = self._get_builder(self.account_1)
 
+        start_at = timezone.now()
+        bribe = AggregatedByAssetBribe(
+            market_key_id=market_key,
+            asset_code=self.reward_asset.code,
+            asset_issuer=self.reward_asset.issuer,
+            start_at=start_at - timedelta(days=1),
+            stop_at=start_at + timedelta(days=1),
+            total_reward_amount=100000,
+        )
+        bribe.save()
+        task_make_trustees_snapshot()
+        holders_before = AssetHolderBalanceSnapshot.objects.count()
+        AssetHolderBalanceSnapshot.objects.all().delete()
+
         claims_before = ClaimableBalance.objects.count()
 
         votes = []
@@ -384,6 +398,7 @@ class BribesTests(TestCase):
                 predicate=ClaimPredicate.predicate_not(ClaimPredicate.predicate_unconditional()),
             ),
         ]
+        builder = self._trust_asset(delegation_voting_account, self.reward_asset, builder=builder)
         builder = self._send_claim(delegation_voting_account, claimants, self.delegation_asset, amount=300, builder=builder)
 
         votes.append(
@@ -442,18 +457,8 @@ class BribesTests(TestCase):
 
         self.assertEqual(claims_before, ClaimableBalance.objects.count() - (3 + 1))  # 3 delegations + 1 delegated vote
 
-        start_at = timezone.now()
-        bribe = AggregatedByAssetBribe(
-            market_key_id=market_key,
-            asset_code=self.reward_asset.code,
-            asset_issuer=self.reward_asset.issuer,
-            start_at=start_at - timedelta(days=1),
-            stop_at=start_at + timedelta(days=1),
-            total_reward_amount=100000,
-        )
-        bribe.save()
         task_make_trustees_snapshot()
-        self.assertEqual(AssetHolderBalanceSnapshot.objects.count(), 13 + 1)  # 13 votes + bribe wallet
+        self.assertEqual(AssetHolderBalanceSnapshot.objects.count() - holders_before, 13 + 1)  # 13 votes + bribe wallet
 
         def vote_loading_mock(self, page):
             if page and page > 1:
@@ -548,7 +553,6 @@ class BribesTests(TestCase):
 
 
         delegation_voting_account = Keypair.random()
-        print(delegation_voting_account.public_key)
         accounts.append(delegation_voting_account)
         builder = self._create_wallet(self.account_1, delegation_voting_account, 5, builder=builder)
         builder = self._trust_asset(delegation_voting_account, self.delegation_asset, builder=builder)
