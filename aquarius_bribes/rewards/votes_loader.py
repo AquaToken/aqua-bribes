@@ -85,7 +85,7 @@ class VotesLoader(object):
             )
         )
 
-        if votes_value > total_delegated_votes:
+        if total_delegated_votes and votes_value > total_delegated_votes:
             votes.append(
                 VoteSnapshot(
                     snapshot_time=self.snapshot_time,
