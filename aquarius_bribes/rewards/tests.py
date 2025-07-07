@@ -847,7 +847,7 @@ class BribesTests(TestCase):
         self.assertEqual(Payout.objects.aggregate(total=models.Sum('reward_amount'))['total'] - reward_amount < 0.01, True)
         self.assertEqual(Payout.objects.aggregate(total=models.Sum('reward_amount'))['total'] <= reward_amount, True)
 
-    def test_reward_payer_delegated_with_own_votes(self):
+    def test_reward_payer_delegated_with_own_votes_2(self):
         market_key = MarketKey(market_key=Keypair.random().public_key)
         market_key.save()
         snapshot_time = timezone.now()
