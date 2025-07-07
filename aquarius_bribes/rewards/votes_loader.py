@@ -61,6 +61,18 @@ class VotesLoader(object):
             asset_filter,
         ).filter(claimants__destination=self.market_key).exists()
 
+    def amount_delegated_votes(self, voting_account):
+        asset_filter = self._get_delegated_asset_filter()
+
+        date = self.snapshot_time.replace(hour=0)
+        return ClaimableBalance.objects.filter(
+            loaded_at__gte=date, loaded_at__lt=date + timedelta(days=1),
+        ).filter(owner=voting_account).filter(
+            asset_filter,
+        ).filter(claimants__destination=self.market_key).aggregate(
+            total_votes=models.Sum('amount'),
+        )['total_votes'] or Decimal('0')
+
     def process_delegated_vote(self, voting_account, votes_value):
         votes = []
         votes_value = Decimal(votes_value)
@@ -81,6 +93,8 @@ class VotesLoader(object):
         if total_delegated_votes is None:
             total_delegated_votes = Decimal(0)
 
+        delegated_votes_amount = self.amount_delegated_votes(voting_account)
+
         votes.append(
             VoteSnapshot(
                 snapshot_time=self.snapshot_time,
@@ -92,18 +106,18 @@ class VotesLoader(object):
             )
         )
 
-        if votes_value > total_delegated_votes:
+        if votes_value > delegated_votes_amount:
             votes.append(
                 VoteSnapshot(
                     snapshot_time=self.snapshot_time,
-                    votes_value=votes_value - total_delegated_votes,
+                    votes_value=votes_value - delegated_votes_amount,
                     voting_account=voting_account,
                     market_key_id=self.market_key,
                     is_delegated=False,
                     has_delegation=False,
                 )
             )
-            votes_value = total_delegated_votes
+            votes_value = delegated_votes_amount
 
         if total_delegated_votes > 0:
             for delegated_vote in delegated_votes:
