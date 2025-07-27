@@ -7,8 +7,63 @@ from stellar_sdk import ClaimPredicate
 from stellar_sdk.xdr import ClaimPredicate as XDRClaimPredicate
 
 
-class ClaimableBalance(models.Model):
+class OldClaimableBalance(models.Model):
     claimable_balance_id = models.CharField(max_length=96, primary_key=True)
+
+    asset_code = models.CharField(max_length=12)
+    asset_issuer = models.CharField(max_length=56)
+
+    amount = models.DecimalField(max_digits=20, decimal_places=7, default=0)
+    sponsor = models.CharField(max_length=56)
+
+    owner = models.CharField(max_length=56)
+
+    paging_token = models.CharField(max_length=32, blank=True)
+    last_modified_time = models.DateTimeField(null=True)
+    last_modified_ledger = models.PositiveIntegerField()
+
+    loaded_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return "ClaimableBalance: {}...{}".format(self.claimable_balance_id[:6], self.claimable_balance_id[-6:])
+
+    @property
+    def asset(self):
+        return Asset(code=self.asset_code, issuer=self.asset_issuer)
+
+    @property
+    def balance_claimants(self):
+        result = []
+        for claimant in self.claimants.all():
+            result.append(
+                SDKClaimant(
+                    destination=claimant.destination,
+                    predicate=claimant.predicate,
+                )
+            )
+        return result
+
+
+class OldClaimant(models.Model):
+    destination = models.CharField(max_length=56)
+
+    raw_predicate = models.TextField()
+
+    old_claimable_balance = models.CharField(max_length=255)
+
+    def __str__(self):
+        return "Claimant {}...{} for {}...{}".format(
+            self.destination[:6], self.destination[-6:], self.claimable_balance_id[:6], self.claimable_balance_id[-6:],
+        )
+
+    @property
+    def predicate(self):
+        return ClaimPredicate.from_xdr_object(XDRClaimPredicate.from_xdr(self.raw_predicate))
+
+
+class ClaimableBalance(models.Model):
+    claimable_balance_id = models.CharField(max_length=96)
 
     asset_code = models.CharField(max_length=12)
     asset_issuer = models.CharField(max_length=56)
@@ -54,7 +109,9 @@ class Claimant(models.Model):
 
     def __str__(self):
         return "Claimant {}...{} for {}...{}".format(
-            self.destination[:6], self.destination[-6:], self.claimable_balance_id[:6], self.claimable_balance_id[-6:],
+            self.destination[:6], self.destination[-6:],
+            self.claimable_balance.claimable_balance_id[:6],
+            self.claimable_balance.claimable_balance_id[-6:],
         )
 
     @property

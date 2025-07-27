@@ -1,6 +1,7 @@
 from typing import Dict, List
 
 from django.conf import settings
+from django.utils import timezone
 
 from billiard.exceptions import SoftTimeLimitExceeded
 from stellar_sdk import Asset as SDKAsset
@@ -40,12 +41,15 @@ class ClaimLoader(object):
 
         processed_claims = []
         while claims:
-            for claim in claims:
-                processed_claims.append(self._process_claim(claim))
+            try:
+                for claim in claims:
+                    processed_claims.append(self._process_claim(claim))
 
-            cursor = claims[-1]['paging_token']
+                cursor = claims[-1]['paging_token']
 
-            claims = self._get_page(cursor=cursor)
+                claims = self._get_page(cursor=cursor)
+            except SoftTimeLimitExceeded:
+                pass
 
     def _build_predicate(self, raw_predicate):
         if 'and' in raw_predicate:
@@ -82,25 +86,29 @@ class ClaimLoader(object):
                 owner = claimant['destination']
                 break
 
-        instance, created = ClaimableBalance.objects.get_or_create(
-            claimable_balance_id=claim['id'],
-            defaults={
-                'asset_code': self.asset.code,
-                'asset_issuer': self.asset.issuer,
-                'amount': claim['amount'],
-                'sponsor': claim['sponsor'],
-                'paging_token': '',
-                'last_modified_time': claim['last_modified_time'],
-                'last_modified_ledger': claim['last_modified_ledger'],
-                'owner': owner,
-            }
-        )
+        date = timezone.now()
+        date = date.replace(hour=0, minute=0, second=0, microsecond=0)
+        instance = ClaimableBalance.objects.filter(claimable_balance_id=claim['id'], loaded_at__gt=date).first()
 
-        if created:
-            for claimant in claim['claimants']:
-                Claimant.objects.create(
-                    destination=claimant['destination'],
-                    raw_predicate=self._build_predicate(claimant['predicate']).to_xdr_object().to_xdr(),
-                    claimable_balance=instance,
-                )
+        if not instance:
+            instance = ClaimableBalance.objects.create(
+                claimable_balance_id=claim['id'],
+                asset_code=self.asset.code,
+                asset_issuer=self.asset.issuer,
+                amount=claim['amount'],
+                sponsor=claim['sponsor'],
+                paging_token='',
+                last_modified_time=claim['last_modified_time'],
+                last_modified_ledger=claim['last_modified_ledger'],
+                owner=owner,
+            )
+        else:
+            return instance
+
+        for claimant in claim['claimants']:
+            Claimant.objects.create(
+                destination=claimant['destination'],
+                raw_predicate=self._build_predicate(claimant['predicate']).to_xdr_object().to_xdr(),
+                claimable_balance=instance,
+            )
         return instance
