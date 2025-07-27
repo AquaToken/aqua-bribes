@@ -38,17 +38,14 @@ class ClaimLoader(object):
     def make_claim_spanshot(self):
         claims = self._get_page()
 
+        processed_claims = []
         while claims:
-            try:
-                processed_claims = []
-                for claim in claims:
-                    processed_claims.append(self._process_claim(claim))
+            for claim in claims:
+                processed_claims.append(self._process_claim(claim))
 
-                cursor = claims[-1]['paging_token']
+            cursor = claims[-1]['paging_token']
 
-                claims = self._get_page(cursor=cursor)
-            except SoftTimeLimitExceeded:
-                pass
+            claims = self._get_page(cursor=cursor)
 
     def _build_predicate(self, raw_predicate):
         if 'and' in raw_predicate:
