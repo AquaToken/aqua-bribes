@@ -28,7 +28,9 @@ def task_load_bribes():
 
 @celery_app.task(ignore_result=True, soft_time_limit=60 * 30, time_limit=60 * 35)
 def load_market_key_details():
-    for market_key in MarketKey.objects.filter(raw_asset1=''):
+    for market_key in MarketKey.objects.filter(raw_asset1='').filter(
+        bribes__status__in=[Bribe.STATUS_PENDING, Bribe.STATUS_ACTIVE],
+    ):
         try:
             url = "https://marketkeys-tracker.aqua.network/api/market-keys/?account_id={}".format(market_key.market_key)
             response = requests.get(url)
