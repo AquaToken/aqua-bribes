@@ -6,7 +6,7 @@ from aquarius_bribes.bribes.models import AggregatedByAssetBribe, Bribe, MarketK
 @admin.register(MarketKey)
 class MarketKeyAdmin(admin.ModelAdmin):
     list_display = [
-        '__str__', 'market_key',
+        'short_value', 'market_key',
     ]
     search_fields = ['market_key', 'raw_asset1', 'raw_asset2']
     readonly_fields = [
