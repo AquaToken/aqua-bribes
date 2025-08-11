@@ -168,8 +168,10 @@ class BribeProcessor(object):
             operations = None
             if meta.v2:
                 operations = meta.v2.operations
-            else:
+            elif meta.v3:
                 operations = meta.v3.operations
+            elif meta.v4:
+                operations = meta.v4.operations
 
             path_payment_changes = operations[-1].changes.ledger_entry_changes
             for change in path_payment_changes:

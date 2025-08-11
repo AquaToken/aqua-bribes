@@ -1,3 +1,6 @@
+import logging
+import requests
+
 from datetime import timedelta
 
 from django.conf import settings
@@ -10,14 +13,33 @@ from stellar_sdk.exceptions import BaseHorizonError
 from aquarius_bribes.bribes.bribe_processor import BribeProcessor
 from aquarius_bribes.bribes.exceptions import NoPathForConversionError
 from aquarius_bribes.bribes.loader import BribesLoader
-from aquarius_bribes.bribes.models import AggregatedByAssetBribe, Bribe
+from aquarius_bribes.bribes.models import AggregatedByAssetBribe, Bribe, MarketKey
 from aquarius_bribes.taskapp import app as celery_app
+
+
+logger = logging.getLogger(__name__)
 
 
 @celery_app.task(ignore_result=True, soft_time_limit=60 * 30, time_limit=60 * 35)
 def task_load_bribes():
     loader = BribesLoader(settings.BRIBE_WALLET_ADDRESS, settings.BRIBE_WALLET_SIGNER)
     loader.load_bribes()
+
+
+@celery_app.task(ignore_result=True, soft_time_limit=60 * 30, time_limit=60 * 35)
+def load_market_key_details():
+    for market_key in MarketKey.objects.filter(raw_asset1=''):
+        try:
+            url = "https://marketkeys-tracker.aqua.network/api/market-keys/?account_id={}".format(market_key.market_key)
+            response = requests.get(url)
+            key_info = response.json()['results'][0]
+
+            if key_info['asset1'] and key_info['asset2']:
+                market_key.raw_asset1 = key_info['asset1']
+                market_key.raw_asset2 = key_info['asset2']
+                market_key.save(update_fields=['raw_asset1', 'raw_asset2'])
+        except Exception as e:
+            logger.info(str(e))
 
 
 @celery_app.task(ignore_result=True, soft_time_limit=60 * 30, time_limit=60 * 35)

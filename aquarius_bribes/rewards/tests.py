@@ -12,7 +12,7 @@ from constance import config
 from stellar_sdk import Asset, Claimant, ClaimPredicate, Keypair, Server, TransactionBuilder
 
 from aquarius_bribes.bribes.models import AggregatedByAssetBribe, Bribe, MarketKey
-from aquarius_bribes.bribes.tasks import task_aggregate_bribes
+from aquarius_bribes.bribes.tasks import task_aggregate_bribes, load_market_key_details
 from aquarius_bribes.rewards.models import AssetHolderBalanceSnapshot, ClaimableBalance, Payout, VoteSnapshot
 from aquarius_bribes.rewards.reward_payer import RewardPayer
 from aquarius_bribes.rewards.tasks import (
@@ -191,6 +191,9 @@ class BribesTests(TestCase):
     def test_reward_payer(self):
         market_key = MarketKey(market_key='GBPF7NLFCYGZNHU6HS64ZGTE4YCRLAWTLFGOMFTHQ3WSUUFIGOSQFPJT')
         market_key.save()
+
+        load_market_key_details()
+
         snapshot_time = timezone.now()
         snapshot_time = snapshot_time.replace(minute=0, second=0, microsecond=0)
 

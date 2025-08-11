@@ -9,8 +9,34 @@ from stellar_sdk import Asset
 class MarketKey(models.Model):
     market_key = models.CharField(max_length=56, primary_key=True)
 
+    raw_asset1 = models.CharField(max_length=255, default='', blank=True)
+    raw_asset2 = models.CharField(max_length=255, default='', blank=True)
+
     def __str__(self):
         return self.market_key
+
+    def get_asset_object(self, raw_asset):
+        if raw_asset:
+            if raw_asset == 'native':
+                return Asset.native()
+            code, issuer = raw_asset.split(':')
+            return Asset(code=code, issuer=issuer)
+
+    @property
+    def asset1(self):
+        if self.raw_asset1:
+            return self.get_asset_object(self.raw_asset1)
+
+    @property
+    def asset2(self):
+        if self.raw_asset2:
+            return self.get_asset_object(self.raw_asset2)
+
+    @property
+    def short_value(self):
+        if self.asset1 and self.asset2:
+            return '{}/{}'.format(self.asset1.code[:4], self.asset2.code[:4])
+        return '{}...{}'.format(self.market_key[:4], self.market_key[-4:])
 
 
 class Bribe(models.Model):

@@ -45,6 +45,11 @@ def setup_periodic_tasks(sender, **kwargs):
             'schedule': crontab(hour='9', minute='0', day_of_week='sunday'),
             'args': (),
         },
+        'aquarius_bribes.bribes.tasks.load_market_key_details': {
+            'task': 'aquarius_bribes.bribes.tasks.load_market_key_details',
+            'schedule': crontab(hour='*', minute='*/5'),
+            'args': (),
+        },
         'aquarius_bribes.bribes.tasks.task_claim_bribes': {
             'task': 'aquarius_bribes.bribes.tasks.task_claim_bribes',
             'schedule': crontab(hour='19', minute='0', day_of_week='sunday'),
