@@ -3,11 +3,33 @@ from django.contrib import admin
 from aquarius_bribes.bribes.models import AggregatedByAssetBribe, Bribe, MarketKey
 
 
+class ActibeBribesFilter(admin.SimpleListFilter):
+    title = 'Active bribes'
+    parameter_name = 'is_active'
+
+    def lookups(self, request, model_admin):
+        return (
+            ('is_active', _('Is active')),
+            ('not_active', _('Not active')),
+        )
+
+    def queryset(self, request, queryset):
+        value = self.value()
+
+        if value == 'is_active':
+            queryset = queryset.filter(bribes__status=Bribe.STATUS_ACTIVE)
+        elif value == 'not_active':
+            queryset = queryset.exclude(bribes__status=Bribe.STATUS_ACTIVE)
+
+        return queryset
+
+
 @admin.register(MarketKey)
 class MarketKeyAdmin(admin.ModelAdmin):
     list_display = [
         'short_value', 'market_key',
     ]
+    list_filter = [ActibeBribesFilter, ]
     search_fields = ['market_key', 'raw_asset1', 'raw_asset2']
     readonly_fields = [
         'market_key', 'raw_asset1', 'raw_asset2'
