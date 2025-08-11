@@ -1,6 +1,17 @@
 from django.contrib import admin
 
-from aquarius_bribes.bribes.models import AggregatedByAssetBribe, Bribe
+from aquarius_bribes.bribes.models import AggregatedByAssetBribe, Bribe, MarketKey
+
+
+@admin.register(MarketKey)
+class MarketKeyAdmin(admin.ModelAdmin):
+    list_display = [
+        '__str__', 'market_key',
+    ]
+    search_fields = ['market_key', 'raw_asset1', 'raw_asset2']
+    readonly_fields = [
+        'market_key', 'raw_asset1', 'raw_asset2'
+    ]
 
 
 @admin.register(Bribe)
