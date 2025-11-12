@@ -223,6 +223,7 @@ CORS_ALLOWED_ORIGIN_REGEXES = [
     r"^https://aqua\.network$",
     r"^https://[a-zA-Z0-9.-]+\.aqua\.network$",
     r"^https://[a-zA-Z0-9.-]+\.netlify\.app$",
+    r"^http://localhost:[0-9.-]+$",
 ]
 
 HORIZON_REQUEST_USER_AGENT = 'Aqua-Bribes-Backend'
