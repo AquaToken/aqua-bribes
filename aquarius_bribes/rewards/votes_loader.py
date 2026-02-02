@@ -4,6 +4,7 @@ from decimal import ROUND_DOWN, Decimal
 from django.conf import settings
 from django.db import IntegrityError, models
 
+import sentry_sdk
 import requests
 
 from aquarius_bribes.rewards.models import ClaimableBalance, VoteSnapshot
@@ -138,6 +139,26 @@ class VotesLoader(object):
 
         return votes
 
+    def aggregate_items(self, processed) -> list:
+        # Aggregate items by unique keys
+        # in case of multiple inherited vote snapshots to the same market key from delegate
+        aggregated = {}
+        for item in processed:
+            key = (
+                item.voting_account,
+                item.market_key_id,
+                item.is_delegated,
+                item.has_delegation,
+                item.delegate_owner,
+            )
+            if key not in aggregated:
+                aggregated[key] = item
+            else:
+                aggregated_item = aggregated[key]
+                aggregated_item.votes_value += item.votes_value
+
+        return list(aggregated.values())
+
     def save_all_items(self, processed):
         try:
             VoteSnapshot.objects.bulk_create(processed, batch_size=5000)
@@ -145,15 +166,15 @@ class VotesLoader(object):
             for item in processed:
                 try:
                     item.save()
-                except IntegrityError:
-                    pass
+                except IntegrityError as err:
+                    sentry_sdk.capture_exception(err)
 
     def load_votes(self):
         page = 1
         votes = self._get_page(page)
+        parsed_votes = []
 
         while votes:
-            parsed_votes = []
             for vote in votes:
                 # if vote['asset'] in delegated_assets:
                 if self.has_delegated_votes(vote['voting_account']):
@@ -166,7 +187,8 @@ class VotesLoader(object):
                         self.process_vote(vote)
                     )
 
-            self.save_all_items(parsed_votes)
-
             page += 1
             votes = self._get_page(page)
+
+        aggregated_votes = self.aggregate_items(parsed_votes)
+        self.save_all_items(aggregated_votes)

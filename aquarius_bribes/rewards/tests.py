@@ -188,6 +188,129 @@ class BribesTests(TestCase):
 
         self.assertEqual(VoteSnapshot.objects.count(), response.json()['count'])
 
+    def test_votes_loader_aggregates_duplicate_delegated_votes(self):
+        market_key = MarketKey(market_key=Keypair.random().public_key)
+        market_key.save()
+        snapshot_time = timezone.now()
+        snapshot_time = snapshot_time.replace(minute=0, second=0, microsecond=0)
+
+        delegate = Keypair.random().public_key
+        delegator_1 = Keypair.random().public_key
+        delegator_2 = Keypair.random().public_key
+
+        not_unconditional = ClaimPredicate.predicate_not(
+            ClaimPredicate.predicate_unconditional()
+        ).to_xdr_object().to_xdr()
+        unconditional = ClaimPredicate.predicate_unconditional().to_xdr_object().to_xdr()
+
+        def create_claimable_balance(owner, asset, amount, claimants):
+            balance = ClaimableBalance.objects.create(
+                claimable_balance_id=Keypair.random().public_key,
+                asset_code=asset.code,
+                asset_issuer=asset.issuer,
+                amount=Decimal(amount),
+                sponsor=owner,
+                paging_token='',
+                last_modified_time=timezone.now(),
+                last_modified_ledger=1,
+                owner=owner,
+            )
+            for destination, raw_predicate in claimants:
+                balance.claimants.create(
+                    destination=destination,
+                    raw_predicate=raw_predicate,
+                )
+            return balance
+
+        # delegate has 300 tokens in total
+        create_claimable_balance(
+            owner=delegate,
+            asset=self.delegation_asset,
+            amount='300',
+            claimants=[(market_key.market_key, unconditional)],
+        )
+
+        # each delegator has two inherited claimable balances because of extra tokens lock
+        create_claimable_balance(
+            owner=delegator_1,
+            asset=self.delegated_asset,
+            amount='120',
+            claimants=[
+                (delegate, not_unconditional),
+                (settings.DELEGATE_MARKER, not_unconditional),
+            ],
+        )
+        create_claimable_balance(
+            owner=delegator_1,
+            asset=self.delegated_asset,
+            amount='60',
+            claimants=[
+                (delegate, not_unconditional),
+                (settings.DELEGATE_MARKER, not_unconditional),
+            ],
+        )
+        create_claimable_balance(
+            owner=delegator_2,
+            asset=self.delegated_asset,
+            amount='80',
+            claimants=[
+                (delegate, not_unconditional),
+                (settings.DELEGATE_MARKER, not_unconditional),
+            ],
+        )
+        create_claimable_balance(
+            owner=delegator_2,
+            asset=self.delegated_asset,
+            amount='40',
+            claimants=[
+                (delegate, not_unconditional),
+                (settings.DELEGATE_MARKER, not_unconditional),
+            ],
+        )
+
+        loader = VotesLoader(market_key.market_key, snapshot_time)
+
+        # all votes come from delegate
+        def vote_loading_mock(self, page, page_limit=200):
+            if page and page > 1:
+                return []
+            return [
+                {"votes_value": '300', "voting_account": delegate},
+            ]
+
+        with mock.patch.object(VotesLoader, '_get_page', new=vote_loading_mock):
+            loader.load_votes()
+
+        snapshots = VoteSnapshot.objects.filter(
+            snapshot_time=snapshot_time.date(),
+            market_key=market_key,
+        )
+        self.assertEqual(snapshots.count(), 3)
+
+        delegate_snapshot = snapshots.get(
+            voting_account=delegate,
+            is_delegated=False,
+            has_delegation=True,
+            delegate_owner=None,
+        )
+        self.assertEqual(delegate_snapshot.votes_value, Decimal('300'))
+
+        delegator_1_snapshot = snapshots.get(
+            voting_account=delegator_1,
+            is_delegated=True,
+            has_delegation=False,
+            delegate_owner=delegate,
+        )
+        delegator_2_snapshot = snapshots.get(
+            voting_account=delegator_2,
+            is_delegated=True,
+            has_delegation=False,
+            delegate_owner=delegate,
+        )
+        # delegated votes are aggregated correctly
+        self.assertEqual(delegator_1_snapshot.votes_value, Decimal('180'))
+        self.assertEqual(delegator_2_snapshot.votes_value, Decimal('120'))
+
     def test_reward_payer(self):
         market_key = MarketKey(market_key='GBPF7NLFCYGZNHU6HS64ZGTE4YCRLAWTLFGOMFTHQ3WSUUFIGOSQFPJT')
         market_key.save()
