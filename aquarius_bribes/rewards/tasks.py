@@ -1,28 +1,36 @@
+import logging
 import random
+import uuid
 from datetime import timedelta
 from decimal import Decimal
 
 from django.conf import settings
 from django.core.cache import cache
-from django.db import models
 from django.utils import timezone
 
 from stellar_sdk import Asset
 
 from aquarius_bribes.bribes.models import AggregatedByAssetBribe
 from aquarius_bribes.rewards.claim_loader import ClaimLoader
-from aquarius_bribes.rewards.models import AssetHolderBalanceSnapshot, ClaimableBalance, VoteSnapshot
+from aquarius_bribes.rewards.eligibility import get_payable_votes
+from aquarius_bribes.rewards.models import ClaimableBalance
 from aquarius_bribes.rewards.reward_payer import RewardPayer
 from aquarius_bribes.rewards.trustees_loader import TrusteesLoader
 from aquarius_bribes.rewards.utils import SecuredWallet
 from aquarius_bribes.rewards.votes_loader import VotesLoader
 from aquarius_bribes.taskapp import app as celery_app
-from aquarius_bribes.utils.assets import get_asset_string
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_REWARD_PERIOD = timedelta(hours=24)
 PAYREWARD_TIME_LIMIT = timedelta(minutes=55)
 LOAD_VOTES_TASK_ACTIVE_KEY = 'LOAD_VOTES_TASK_ACTIVE_KEY'
 LOAD_TRUSTORS_TASK_ACTIVE_KEY = 'LOAD_TRUSTORS_TASK_ACTIVE_KEY'
+PAY_REWARDS_TASK_ACTIVE_KEY = 'PAY_REWARDS_TASK_ACTIVE_KEY'
+
+LOAD_VOTES_TASK_TTL = 60 * 60 * 2
+LOAD_TRUSTORS_TASK_TTL = 60 * 60 * 10
+PAY_REWARDS_TASK_TTL = int(PAYREWARD_TIME_LIMIT.total_seconds()) + 60 * 5
 
 
 @celery_app.task(ignore_result=True)
@@ -56,7 +64,7 @@ def task_run_load_votes():
 
 @celery_app.task(ignore_result=True, soft_time_limit=60 * 60 * 1, time_limit=60 * (60 * 1 + 5))
 def task_load_votes(snapshot_time=None):
-    cache.set(LOAD_VOTES_TASK_ACTIVE_KEY, True, None)
+    cache.set(LOAD_VOTES_TASK_ACTIVE_KEY, True, LOAD_VOTES_TASK_TTL)
 
     if snapshot_time is None:
         snapshot_time = timezone.now()
@@ -77,7 +85,7 @@ def task_load_votes(snapshot_time=None):
 
 @celery_app.task(ignore_result=True, soft_time_limit=60 * 60 * 8, time_limit=60 * (60 * 8 + 5))
 def task_make_trustees_snapshot(snapshot_time=None):
-    cache.set(LOAD_TRUSTORS_TASK_ACTIVE_KEY, True, None)
+    cache.set(LOAD_TRUSTORS_TASK_ACTIVE_KEY, True, LOAD_TRUSTORS_TASK_TTL)
 
     if snapshot_time is None:
         snapshot_time = timezone.now()
@@ -106,42 +114,59 @@ def task_make_trustees_snapshot(snapshot_time=None):
     time_limit=PAYREWARD_TIME_LIMIT.total_seconds() + 60 * 3,
 )
 def task_pay_rewards(snapshot_time=None, reward_period=DEFAULT_REWARD_PERIOD):
-    if cache.get(LOAD_VOTES_TASK_ACTIVE_KEY, False) or cache.get(LOAD_TRUSTORS_TASK_ACTIVE_KEY, False):
+    # PAY_REWARDS_TASK_ACTIVE_KEY is in the blocking list AND acquired via
+    # cache.add() with an owner token: a concurrent task_pay_rewards must
+    # fail to acquire. Without the self-exclusion two workers both pass
+    # the guard, both compute the payable set, both submit to Horizon,
+    # and the voter is double-credited.
+    if any(cache.get(key, False) for key in (
+        LOAD_VOTES_TASK_ACTIVE_KEY,
+        LOAD_TRUSTORS_TASK_ACTIVE_KEY,
+        PAY_REWARDS_TASK_ACTIVE_KEY,
+    )):
         return
 
-    stop_at = timezone.now() + PAYREWARD_TIME_LIMIT
+    owner_token = uuid.uuid4().hex
+    if not cache.add(PAY_REWARDS_TASK_ACTIVE_KEY, owner_token, PAY_REWARDS_TASK_TTL):
+        # Another worker acquired between our blocking-list check and the
+        # cache.add — back out without touching the key it owns.
+        logger.warning(
+            'task_pay_rewards: another run holds PAY_REWARDS_TASK_ACTIVE_KEY; aborting',
+        )
+        return
 
-    if snapshot_time is None:
-        snapshot_time = timezone.now()
-        snapshot_time = snapshot_time.replace(minute=0, second=0, microsecond=0)
+    try:
+        stop_at = timezone.now() + PAYREWARD_TIME_LIMIT
+        asset_holder_cache = {}
 
-    reward_wallet = SecuredWallet(
-        public_key=settings.BRIBE_WALLET_ADDRESS,
-        secret=settings.BRIBE_WALLET_SIGNER,
-    )
+        if snapshot_time is None:
+            snapshot_time = timezone.now()
+            snapshot_time = snapshot_time.replace(minute=0, second=0, microsecond=0)
 
-    active_bribes = AggregatedByAssetBribe.objects.filter(
-        start_at__lte=snapshot_time, stop_at__gt=snapshot_time,
-    )
-
-    for bribe in active_bribes:
-        votes = VoteSnapshot.objects.filter(
-            snapshot_time=snapshot_time.date(), market_key=bribe.market_key,
+        reward_wallet = SecuredWallet(
+            public_key=settings.BRIBE_WALLET_ADDRESS,
+            secret=settings.BRIBE_WALLET_SIGNER,
         )
 
-        if bribe.asset.type != Asset.native().type:
-            votes = votes.filter(
-                voting_account__in=AssetHolderBalanceSnapshot.objects.filter(
-                    created_at__gte=snapshot_time.date(),
-                    created_at__lt=snapshot_time.date() + timedelta(days=1),
-                    asset_code=bribe.asset_code,
-                    asset_issuer=bribe.asset_issuer,
-                ).values_list('account'),
+        active_bribes = AggregatedByAssetBribe.objects.filter(
+            start_at__lte=snapshot_time, stop_at__gt=snapshot_time,
+        )
+
+        for bribe in active_bribes:
+            reward_amount = bribe.daily_amount * Decimal(reward_period.total_seconds() / (24 * 3600))
+            votes, total_votes = get_payable_votes(
+                bribe,
+                snapshot_time.date(),
+                reward_amount=reward_amount,
+                asset_holder_cache=asset_holder_cache,
             )
 
-        votes = votes.exclude(has_delegation=True)
-
-        if votes.count() > 0:
-            reward_amount = bribe.daily_amount * Decimal(reward_period.total_seconds() / (24 * 3600))
-            reward_payer = RewardPayer(bribe, reward_wallet, bribe.asset, reward_amount, stop_at=stop_at)
-            reward_payer.pay_reward(votes)
+            if votes.count() > 0:
+                reward_payer = RewardPayer(bribe, reward_wallet, bribe.asset, reward_amount, stop_at=stop_at)
+                reward_payer.pay_reward(votes, total_votes=total_votes)
+    finally:
+        # Only release the lock if we still own it — otherwise a stale
+        # finally from a timed-out run could clear a key freshly acquired
+        # by the next worker.
+        if cache.get(PAY_REWARDS_TASK_ACTIVE_KEY) == owner_token:
+            cache.delete(PAY_REWARDS_TASK_ACTIVE_KEY)
