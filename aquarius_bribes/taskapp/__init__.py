@@ -80,5 +80,10 @@ def setup_periodic_tasks(sender, **kwargs):
             'schedule': crontab(hour='*', minute='1'),
             'args': (),
         },
+        'aquarius_bribes.rewards.tasks.task_check_payout_completeness': {
+            'task': 'aquarius_bribes.rewards.tasks.task_check_payout_completeness',
+            'schedule': crontab(hour='1', minute='0'),
+            'args': (),
+        },
         'drf_secure_token.tasks.delete_old_tokens': DELETE_OLD_TOKENS,
     })
