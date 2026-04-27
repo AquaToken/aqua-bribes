@@ -1,9 +1,10 @@
 import logging
 import random
 import uuid
-from datetime import timedelta
+from datetime import date, timedelta
 from decimal import Decimal
 
+from celery.exceptions import MaxRetriesExceededError
 from django.conf import settings
 from django.core.cache import cache
 from django.utils import timezone
@@ -26,10 +27,12 @@ DEFAULT_REWARD_PERIOD = timedelta(hours=24)
 PAYREWARD_TIME_LIMIT = timedelta(minutes=55)
 LOAD_VOTES_TASK_ACTIVE_KEY = 'LOAD_VOTES_TASK_ACTIVE_KEY'
 LOAD_TRUSTORS_TASK_ACTIVE_KEY = 'LOAD_TRUSTORS_TASK_ACTIVE_KEY'
+PAY_REWARDS_FIX_DB_ACTIVE_KEY = 'PAY_REWARDS_FIX_DB_ACTIVE_KEY'
 PAY_REWARDS_TASK_ACTIVE_KEY = 'PAY_REWARDS_TASK_ACTIVE_KEY'
 
 LOAD_VOTES_TASK_TTL = 60 * 60 * 2
 LOAD_TRUSTORS_TASK_TTL = 60 * 60 * 10
+PAY_REWARDS_FIX_DB_TTL = 60 * 30
 PAY_REWARDS_TASK_TTL = int(PAYREWARD_TIME_LIMIT.total_seconds()) + 60 * 5
 
 
@@ -122,6 +125,7 @@ def task_pay_rewards(snapshot_time=None, reward_period=DEFAULT_REWARD_PERIOD):
     if any(cache.get(key, False) for key in (
         LOAD_VOTES_TASK_ACTIVE_KEY,
         LOAD_TRUSTORS_TASK_ACTIVE_KEY,
+        PAY_REWARDS_FIX_DB_ACTIVE_KEY,
         PAY_REWARDS_TASK_ACTIVE_KEY,
     )):
         return
@@ -170,3 +174,45 @@ def task_pay_rewards(snapshot_time=None, reward_period=DEFAULT_REWARD_PERIOD):
         # by the next worker.
         if cache.get(PAY_REWARDS_TASK_ACTIVE_KEY) == owner_token:
             cache.delete(PAY_REWARDS_TASK_ACTIVE_KEY)
+
+
+@celery_app.task(bind=True, ignore_result=True, max_retries=3, default_retry_delay=60 * 15)
+def task_check_payout_completeness(self, snapshot_date_iso=None):
+    # Freeze snapshot_date at first dispatch and thread it through retries.
+    # Without this, retries (3 × 15min) crossing UTC midnight would flip
+    # both the Sentry alert's reported date and the date actually checked
+    # — a 01:00 UTC task for "yesterday" delayed past midnight would
+    # silently run against the previous "today" (now being written).
+    if snapshot_date_iso is None:
+        snapshot_date = timezone.now().date() - timedelta(days=1)
+    else:
+        snapshot_date = date.fromisoformat(snapshot_date_iso)
+
+    blocking_keys = (
+        PAY_REWARDS_FIX_DB_ACTIVE_KEY,
+        PAY_REWARDS_TASK_ACTIVE_KEY,
+    )
+    if any(cache.get(key, False) for key in blocking_keys):
+        try:
+            return self.retry(args=(snapshot_date.isoformat(),))
+        except MaxRetriesExceededError:
+            import sentry_sdk
+
+            sentry_sdk.capture_message(
+                'completeness-check-skipped: pay-rewards still running after 3 retries',
+                level='warning',
+                contexts={
+                    'bribe_completeness': {
+                        'date': snapshot_date.isoformat(),
+                    },
+                },
+            )
+            return
+
+    from aquarius_bribes.rewards.management.commands.check_payout_completeness import run_completeness_check
+
+    run_completeness_check(
+        date=snapshot_date,
+        threshold_pct=settings.PAYOUT_COMPLETENESS_THRESHOLD_PCT,
+        emit_alert=settings.PAYOUT_COMPLETENESS_ALERT_ENABLED,
+    )

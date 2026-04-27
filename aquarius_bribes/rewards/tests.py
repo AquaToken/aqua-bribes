@@ -36,6 +36,7 @@ DELEGATABLE_ASSETS = [
     (Asset('upvote', random_asset_issuer.public_key), Asset('delegatedUp', random_asset_issuer.public_key))
 ]
 
+
 @override_settings(
     REWARD_ASSET_CODE='ZZZ', REWARD_ASSET_ISSUER=random_asset_issuer.public_key,
     BRIBE_WALLET_ADDRESS=bribe_wallet.public_key, BRIBE_WALLET_SIGNER=bribe_wallet.secret,
@@ -685,6 +686,7 @@ class BribesTests(TestCase):
             ]
             builder = self._send_claim(voting_account, claimants, self.delegated_asset, amount=100, builder=builder)
 
+
         delegation_voting_account = Keypair.random()
         accounts.append(delegation_voting_account)
         builder = self._create_wallet(self.account_1, delegation_voting_account, 5, builder=builder)
@@ -1046,6 +1048,7 @@ class BribesTests(TestCase):
             ]
             builder = self._send_claim(voting_account, claimants, self.delegated_asset, amount=100, builder=builder)
 
+
         delegation_voting_account = Keypair.random()
         print(delegation_voting_account.public_key)
         accounts.append(delegation_voting_account)
@@ -1182,6 +1185,7 @@ class BribesTests(TestCase):
         self.assertEqual(Payout.objects.aggregate(total=models.Sum('reward_amount'))['total'] - reward_amount < 0.01, True)
         self.assertEqual(Payout.objects.aggregate(total=models.Sum('reward_amount'))['total'] <= reward_amount, True)
 
+
     def test_reward_payer_delegated_with_own_votes_two_markets(self):
         market_key = MarketKey(market_key=Keypair.random().public_key)
         market_key.save()
@@ -1243,6 +1247,7 @@ class BribesTests(TestCase):
                 ),
             ]
             builder = self._send_claim(voting_account, claimants, self.delegated_asset, amount=100, builder=builder)
+
 
         delegation_voting_account = Keypair.random()
         print(delegation_voting_account.public_key)
@@ -1390,6 +1395,7 @@ class BribesTests(TestCase):
                 ),
             ]
             builder_2 = self._send_claim(voting_account, claimants, self.delegated_asset, amount=100, builder=builder_2)
+
 
         claim_after = timezone.now() + timedelta(seconds=1)
         claim_after_timestamp = int(claim_after.strftime("%s"))
@@ -1549,18 +1555,21 @@ class BribesTests(TestCase):
         self.assertEqual(Payout.objects.aggregate(total=models.Sum('reward_amount'))['total'] - reward_amount - reward_amount_2 < 0.01, True)
         self.assertEqual(Payout.objects.aggregate(total=models.Sum('reward_amount'))['total'] <= reward_amount + reward_amount_2, True)
 
-class RewardPayerResilienceTests(TestCase):
+
+class ReconcileAndMonitoringTests(TestCase):
     def tearDown(self):
         from django.core.cache import cache as _cache
         from aquarius_bribes.rewards.tasks import (
             LOAD_VOTES_TASK_ACTIVE_KEY,
             LOAD_TRUSTORS_TASK_ACTIVE_KEY,
+            PAY_REWARDS_FIX_DB_ACTIVE_KEY,
             PAY_REWARDS_TASK_ACTIVE_KEY,
         )
 
         for k in (
             LOAD_VOTES_TASK_ACTIVE_KEY,
             LOAD_TRUSTORS_TASK_ACTIVE_KEY,
+            PAY_REWARDS_FIX_DB_ACTIVE_KEY,
             PAY_REWARDS_TASK_ACTIVE_KEY,
         ):
             _cache.delete(k)
@@ -1673,6 +1682,56 @@ class RewardPayerResilienceTests(TestCase):
             market, Keypair.random().public_key, snapshot_date, "1"
         )
         return regular_votes, dust_vote
+
+    def _chain_record(
+        self,
+        bribe_wallet,
+        to,
+        asset_code,
+        asset_issuer,
+        amount,
+        tx_hash,
+        memo,
+        created_at_str,
+        paging_token=None,
+    ):
+        return {
+            "id": paging_token or tx_hash,
+            "paging_token": paging_token or tx_hash,
+            "type": "payment",
+            "created_at": created_at_str,
+            "transaction_hash": tx_hash,
+            "from": bribe_wallet,
+            "to": to,
+            "asset_type": "native"
+            if not asset_code or asset_code == "XLM"
+            else "credit_alphanum4",
+            "asset_code": asset_code,
+            "asset_issuer": asset_issuer,
+            "amount": str(amount),
+            "transaction": {
+                "successful": True,
+                "memo_type": "text",
+                "memo": memo,
+                "hash": tx_hash,
+                "source_account": bribe_wallet,
+            },
+        }
+
+    def _mock_reconcile_server(self, *pages):
+        server = mock.MagicMock()
+        builder = server.payments.return_value.for_account.return_value.include_failed.return_value
+        builder.join.return_value = builder
+        builder.limit.return_value = builder
+        builder.order.return_value = builder
+        builder.cursor.return_value = builder
+        builder.call.side_effect = [{"_embedded": {"records": page}} for page in pages]
+        return server, builder
+
+    def _reconcile(self, *args, **kwargs):
+        from aquarius_bribes.rewards.reconcile import reconcile_bribe_payouts
+
+        return reconcile_bribe_payouts(*args, **kwargs)
 
     def _old_payable_vote_ids(self, bribe, snapshot_date, reward_amount):
         votes = VoteSnapshot.objects.filter(
@@ -2037,6 +2096,24 @@ class RewardPayerResilienceTests(TestCase):
             LOAD_TRUSTORS_TASK_ACTIVE_KEY, True, LOAD_TRUSTORS_TASK_TTL
         )
 
+    def test_pay_rewards_skips_when_fix_db_flag_set(self):
+        from django.core.cache import cache
+        from aquarius_bribes.rewards.tasks import (
+            PAY_REWARDS_FIX_DB_ACTIVE_KEY,
+            PAY_REWARDS_TASK_ACTIVE_KEY,
+        )
+
+        cache.set(PAY_REWARDS_FIX_DB_ACTIVE_KEY, True, 60)
+
+        with mock.patch(
+            "aquarius_bribes.rewards.tasks.AggregatedByAssetBribe.objects.filter"
+        ) as mock_filter:
+            task_pay_rewards()
+
+        self.assertFalse(mock_filter.called)
+        self.assertFalse(cache.get(PAY_REWARDS_TASK_ACTIVE_KEY, False))
+        cache.delete(PAY_REWARDS_FIX_DB_ACTIVE_KEY)
+
     def test_pay_rewards_sets_and_clears_active_flag(self):
         from django.core.cache import cache
         from aquarius_bribes.rewards.tasks import PAY_REWARDS_TASK_ACTIVE_KEY
@@ -2088,10 +2165,1901 @@ class RewardPayerResilienceTests(TestCase):
         finally:
             cache.delete(PAY_REWARDS_TASK_ACTIVE_KEY)
 
+    def test_reconcile_buckets_matched(self):
+        snapshot_date = timezone.now().date()
+        created_at = self._at(snapshot_date, 12)
+        wallet = Keypair.random().public_key
+        market = self._make_market(
+            asset1="AQUA:{}".format(Keypair.random().public_key),
+            asset2="native",
+        )
+        bribe = self._make_day_bribe(
+            market,
+            snapshot_date,
+            asset_code=Asset.native().code,
+            asset_issuer="",
+        )
+        vote_a = self._make_vote(
+            market, Keypair.random().public_key, snapshot_date, "100"
+        )
+        vote_b = self._make_vote(
+            market, Keypair.random().public_key, snapshot_date, "200"
+        )
+        records = [
+            self._chain_record(
+                wallet,
+                vote_a.voting_account,
+                Asset.native().code,
+                "",
+                Decimal("10.0000000"),
+                "tx-a",
+                "Bribe: {}".format(market.short_value),
+                created_at.isoformat(),
+            ),
+            self._chain_record(
+                wallet,
+                vote_b.voting_account,
+                Asset.native().code,
+                "",
+                Decimal("20.0000000"),
+                "tx-b",
+                "Bribe: {}".format(market.short_value),
+                created_at.isoformat(),
+            ),
+        ]
+        server, _ = self._mock_reconcile_server(records, [])
+        self._make_payout(bribe, vote_a, "tx-a", Decimal("10.0000000"))
+        self._make_payout(bribe, vote_b, "tx-b", Decimal("20.0000000"))
+
+        report = self._reconcile(snapshot_date, snapshot_date, wallet, server=server)
+
+        self.assertEqual(len(report.matched), 2)
+        self.assertEqual(len(report.chain_only), 0)
+        self.assertEqual(len(report.db_only), 0)
+        self.assertEqual(len(report.ambiguous), 0)
+        self.assertEqual(len(report.missed), 0)
+
+    def test_reconcile_buckets_chain_only(self):
+        snapshot_date = timezone.now().date()
+        created_at = self._at(snapshot_date, 12)
+        wallet = Keypair.random().public_key
+        market = self._make_market(
+            asset1="AQUA:{}".format(Keypair.random().public_key),
+            asset2="native",
+        )
+        bribe = self._make_day_bribe(
+            market,
+            snapshot_date,
+            asset_code=Asset.native().code,
+            asset_issuer="",
+        )
+        vote_a = self._make_vote(
+            market, Keypair.random().public_key, snapshot_date, "100"
+        )
+        vote_b = self._make_vote(
+            market, Keypair.random().public_key, snapshot_date, "200"
+        )
+        server, _ = self._mock_reconcile_server(
+            [
+                self._chain_record(
+                    wallet,
+                    vote_a.voting_account,
+                    Asset.native().code,
+                    "",
+                    Decimal("10.0000000"),
+                    "tx-a",
+                    "Bribe: {}".format(market.short_value),
+                    created_at.isoformat(),
+                ),
+                self._chain_record(
+                    wallet,
+                    vote_b.voting_account,
+                    Asset.native().code,
+                    "",
+                    Decimal("20.0000000"),
+                    "tx-b",
+                    "Bribe: {}".format(market.short_value),
+                    created_at.isoformat(),
+                ),
+            ],
+            [],
+        )
+        failed_payout = self._make_payout(
+            bribe,
+            vote_b,
+            "tx-b",
+            Decimal("20.0000000"),
+            status=Payout.STATUS_FAILED,
+        )
+
+        report = self._reconcile(snapshot_date, snapshot_date, wallet, server=server)
+
+        self.assertEqual(len(report.matched), 0)
+        self.assertEqual(len(report.chain_only), 2)
+        self.assertEqual(len(report.db_only), 0)
+        self.assertEqual(len(report.missed), 0)
+        chain_only_by_account = {entry[1]: entry for entry in report.chain_only}
+        self.assertIsNone(chain_only_by_account[vote_a.voting_account][9])
+        self.assertEqual(
+            chain_only_by_account[vote_b.voting_account][9], failed_payout.id
+        )
+
+    def test_reconcile_buckets_db_only(self):
+        snapshot_date = timezone.now().date()
+        wallet = Keypair.random().public_key
+        market = self._make_market()
+        bribe = self._make_bribe(
+            market,
+            asset_code=Asset.native().code,
+            asset_issuer="",
+        )
+        vote = self._make_vote(
+            market, Keypair.random().public_key, snapshot_date, "100"
+        )
+        payout = self._make_payout(bribe, vote, "abc123", Decimal("15.0000000"))
+        server, _ = self._mock_reconcile_server([], [])
+
+        report = self._reconcile(snapshot_date, snapshot_date, wallet, server=server)
+
+        self.assertEqual(len(report.db_only), 1)
+        self.assertEqual(report.db_only[0][0], payout.id)
+        self.assertEqual(len(report.matched), 0)
+        self.assertEqual(len(report.chain_only), 0)
+        self.assertEqual(len(report.missed), 0)
+
+    def test_reconcile_buckets_missed(self):
+        snapshot_date = timezone.now().date()
+        wallet = Keypair.random().public_key
+        market = self._make_market()
+        self._make_bribe(
+            market,
+            asset_code=Asset.native().code,
+            asset_issuer="",
+        )
+        votes = [
+            self._make_vote(market, Keypair.random().public_key, snapshot_date, "100"),
+            self._make_vote(market, Keypair.random().public_key, snapshot_date, "200"),
+            self._make_vote(market, Keypair.random().public_key, snapshot_date, "300"),
+        ]
+        server, _ = self._mock_reconcile_server([], [])
+
+        report = self._reconcile(snapshot_date, snapshot_date, wallet, server=server)
+
+        self.assertEqual(len(report.missed), 3)
+        self.assertSetEqual(
+            {item[1] for item in report.missed}, {vote.id for vote in votes}
+        )
+
+    def test_reconcile_buckets_ambiguous(self):
+        snapshot_date = timezone.now().date()
+        created_at = self._at(snapshot_date, 12)
+        wallet = Keypair.random().public_key
+        market = self._make_market(
+            asset1="AQUA:{}".format(Keypair.random().public_key),
+            asset2="native",
+        )
+        self._make_day_bribe(
+            market,
+            snapshot_date,
+            asset_code=Asset.native().code,
+            asset_issuer="",
+        )
+        self._make_day_bribe(
+            market,
+            snapshot_date,
+            asset_code=Asset.native().code,
+            asset_issuer="",
+        )
+        server, _ = self._mock_reconcile_server(
+            [
+                self._chain_record(
+                    wallet,
+                    Keypair.random().public_key,
+                    Asset.native().code,
+                    "",
+                    Decimal("10.0000000"),
+                    "tx-a",
+                    "Bribe: {}".format(market.short_value),
+                    created_at.isoformat(),
+                ),
+            ],
+            [],
+        )
+
+        report = self._reconcile(snapshot_date, snapshot_date, wallet, server=server)
+
+        # Destination has no VoteSnapshot → _resolve_chain_only_candidate
+        # returns _CHAIN_ORPHAN. The fallback bribe lookup finds 2 same-day
+        # bribes for the memo short_value, so fallback_bribe_id is None and
+        # the op lands in chain_only (not ambiguous). Ambiguous is reserved
+        # for situations where a VoteSnapshot exists but cannot be uniquely
+        # tied to a (bribe, vote_snapshot) — covered by dedicated tests.
+        self.assertEqual(len(report.chain_only), 1)
+        self.assertIsNone(report.chain_only[0][5])  # fallback_bribe_id
+        self.assertEqual(len(report.ambiguous), 0)
+        self.assertEqual(len(report.matched), 0)
+        self.assertEqual(len(report.missed), 0)
+
+    def test_reconcile_missed_ignores_dust_votes(self):
+        snapshot_date = timezone.now().date()
+        wallet = Keypair.random().public_key
+        market = self._make_market()
+        self._make_bribe(
+            market,
+            asset_code=Asset.native().code,
+            asset_issuer="",
+            total=Decimal("0.0007000"),
+        )
+        regular_votes, dust_vote = self._make_dust_votes(market, snapshot_date)
+        server, _ = self._mock_reconcile_server([], [])
+
+        report = self._reconcile(snapshot_date, snapshot_date, wallet, server=server)
+
+        self.assertEqual(len(report.missed), 4)
+        self.assertSetEqual(
+            {item[1] for item in report.missed}, {vote.id for vote in regular_votes}
+        )
+        self.assertNotIn(dust_vote.id, {item[1] for item in report.missed})
+
+    def test_reconcile_resolution_aqua_usdc_vs_aqua_usdt_disambiguated_by_asset_issuer(
+        self,
+    ):
+        snapshot_date = timezone.now().date()
+        created_at = self._at(snapshot_date, 12)
+        wallet = Keypair.random().public_key
+        usdc_issuer = Keypair.random().public_key
+        usdt_issuer = Keypair.random().public_key
+        market_usdc = self._make_market(
+            asset1="AQUA:{}".format(Keypair.random().public_key),
+            asset2="USD:{}".format(usdc_issuer),
+        )
+        market_usdt = self._make_market(
+            asset1="AQUA:{}".format(Keypair.random().public_key),
+            asset2="USD:{}".format(usdt_issuer),
+        )
+        bribe_usdc = self._make_day_bribe(
+            market_usdc,
+            snapshot_date,
+            asset_code="USD",
+            asset_issuer=usdc_issuer,
+        )
+        self._make_day_bribe(
+            market_usdt,
+            snapshot_date,
+            asset_code="USD",
+            asset_issuer=usdt_issuer,
+        )
+        vote = self._make_vote(
+            market_usdc, Keypair.random().public_key, snapshot_date, "100"
+        )
+        server, _ = self._mock_reconcile_server(
+            [
+                self._chain_record(
+                    wallet,
+                    vote.voting_account,
+                    "USD",
+                    usdc_issuer,
+                    Decimal("10.0000000"),
+                    "tx-a",
+                    "Bribe: AQUA/USD",
+                    created_at.isoformat(),
+                ),
+            ],
+            [],
+        )
+
+        report = self._reconcile(snapshot_date, snapshot_date, wallet, server=server)
+
+        self.assertEqual(len(report.chain_only), 1)
+        self.assertEqual(report.chain_only[0][5], bribe_usdc.id)
+        self.assertEqual(len(report.ambiguous), 0)
+        self.assertEqual(len(report.missed), 0)
+
+    def test_reconcile_resolution_orphan_chain_payment_no_vote_snapshot(self):
+        snapshot_date = timezone.now().date()
+        created_at = self._at(snapshot_date, 12)
+        wallet = Keypair.random().public_key
+        market = self._make_market(
+            asset1="AQUA:{}".format(Keypair.random().public_key),
+            asset2="native",
+        )
+        self._make_day_bribe(
+            market,
+            snapshot_date,
+            asset_code=Asset.native().code,
+            asset_issuer="",
+        )
+        server, _ = self._mock_reconcile_server(
+            [
+                self._chain_record(
+                    wallet,
+                    Keypair.random().public_key,
+                    Asset.native().code,
+                    "",
+                    Decimal("10.0000000"),
+                    "tx-a",
+                    "Bribe: {}".format(market.short_value),
+                    created_at.isoformat(),
+                ),
+            ],
+            [],
+        )
+
+        report = self._reconcile(snapshot_date, snapshot_date, wallet, server=server)
+
+        self.assertEqual(len(report.chain_only), 1)
+        self.assertIsNone(report.chain_only[0][6])
+        self.assertEqual(report.chain_orphan_count, 1)
+
+    def test_reconcile_partial_loss_inside_successful_multi_op_tx(self):
+        snapshot_date = timezone.now().date()
+        created_at = self._at(snapshot_date, 12)
+        wallet = Keypair.random().public_key
+        market = self._make_market(
+            asset1="AQUA:{}".format(Keypair.random().public_key),
+            asset2="native",
+        )
+        bribe = self._make_day_bribe(
+            market,
+            snapshot_date,
+            asset_code=Asset.native().code,
+            asset_issuer="",
+        )
+        votes = [
+            self._make_vote(market, Keypair.random().public_key, snapshot_date, "100"),
+            self._make_vote(market, Keypair.random().public_key, snapshot_date, "200"),
+            self._make_vote(market, Keypair.random().public_key, snapshot_date, "300"),
+            self._make_vote(market, Keypair.random().public_key, snapshot_date, "400"),
+            self._make_vote(market, Keypair.random().public_key, snapshot_date, "500"),
+        ]
+        records = [
+            self._chain_record(
+                wallet,
+                vote.voting_account,
+                Asset.native().code,
+                "",
+                Decimal("{:.7f}".format(index + 1)),
+                "shared-tx",
+                "Bribe: {}".format(market.short_value),
+                created_at.isoformat(),
+                paging_token="shared-tx-{}".format(index),
+            )
+            for index, vote in enumerate(votes)
+        ]
+        server, _ = self._mock_reconcile_server(records, [])
+        for index, vote in enumerate(votes[:3]):
+            self._make_payout(bribe, vote, "shared-tx", Decimal("{:.7f}".format(index + 1)))
+
+        report = self._reconcile(snapshot_date, snapshot_date, wallet, server=server)
+
+        self.assertEqual(len(report.matched), 3)
+        self.assertEqual(len(report.chain_only), 2)
+        self.assertSetEqual({entry[0] for entry in report.matched}, {"shared-tx"})
+        self.assertSetEqual({entry[0] for entry in report.chain_only}, {"shared-tx"})
+
+    def test_reconcile_matches_midnight_crossing_payout(self):
+        # task_pay_rewards for snapshot_date=D submitted tx after midnight,
+        # so the chain op carries created_at=D+1 even though the Payout is
+        # linked to snapshot_time=D. Reconcile must still classify as
+        # matched; without the ±1 day chain window + Payout-first lookup,
+        # the Payout would be flagged db_only and --fix-db would downgrade
+        # a valid success to FAILED.
+        snapshot_date = timezone.now().date() - timedelta(days=2)
+        next_day = snapshot_date + timedelta(days=1)
+        created_at = self._at(next_day, 0) + timedelta(minutes=2)
+        wallet = Keypair.random().public_key
+        market = self._make_market(
+            asset1="AQUA:{}".format(Keypair.random().public_key),
+            asset2="native",
+        )
+        bribe = self._make_bribe(
+            market,
+            asset_code=Asset.native().code,
+            asset_issuer="",
+            start=self._at(snapshot_date, 0) - timedelta(days=1),
+            stop=self._at(snapshot_date, 0) + timedelta(days=7),
+        )
+        vote = self._make_vote(
+            market, Keypair.random().public_key, snapshot_date, "100"
+        )
+        payout = self._make_payout(bribe, vote, "tx-midnight", Decimal("10.0000000"))
+        records = [
+            self._chain_record(
+                wallet,
+                vote.voting_account,
+                Asset.native().code,
+                "",
+                Decimal("10.0000000"),
+                "tx-midnight",
+                "Bribe: {}".format(market.short_value),
+                created_at.isoformat(),
+            ),
+        ]
+        server, _ = self._mock_reconcile_server(records, [])
+
+        report = self._reconcile(
+            snapshot_date, snapshot_date, wallet, server=server
+        )
+
+        self.assertEqual(len(report.matched), 1)
+        self.assertEqual(report.matched[0][0], "tx-midnight")
+        self.assertEqual(report.matched[0][7], payout.id)
+        self.assertEqual(len(report.db_only), 0)
+        self.assertEqual(len(report.missed), 0)
+
+    def test_reconcile_matches_midnight_cross_on_bribes_last_day(self):
+        # Bribe's active period ends at D+1 00:00 UTC (inclusive of day D,
+        # exclusive of D+1). task_pay_rewards for snapshot_date=D runs late
+        # and submits tx at D+1 00:05 UTC. The chain op's created_at is
+        # past the bribe's stop_at, so candidate resolution by
+        # (start_at__lte=created_at, stop_at__gt=created_at) returned
+        # zero and the op was dropped into skipped_no_active_bribe. A
+        # legitimate chain-to-DB match could never be reconciled on the
+        # final day of a bribe. Payout-first lookup — and widened bribe
+        # window — fix that.
+        snapshot_date = timezone.now().date() - timedelta(days=2)
+        next_day = snapshot_date + timedelta(days=1)
+        created_at = self._at(next_day, 0) + timedelta(minutes=5)
+        wallet = Keypair.random().public_key
+        market = self._make_market(
+            asset1="AQUA:{}".format(Keypair.random().public_key),
+            asset2="native",
+        )
+        bribe = self._make_bribe(
+            market,
+            asset_code=Asset.native().code,
+            asset_issuer="",
+            start=self._at(snapshot_date, 0) - timedelta(days=6),
+            stop=self._at(next_day, 0),
+        )
+        vote = self._make_vote(
+            market, Keypair.random().public_key, snapshot_date, "100"
+        )
+        payout = self._make_payout(bribe, vote, "tx-last-day", Decimal("10.0000000"))
+        records = [
+            self._chain_record(
+                wallet,
+                vote.voting_account,
+                Asset.native().code,
+                "",
+                Decimal("10.0000000"),
+                "tx-last-day",
+                "Bribe: {}".format(market.short_value),
+                created_at.isoformat(),
+            ),
+        ]
+        server, _ = self._mock_reconcile_server(records, [])
+
+        report = self._reconcile(
+            snapshot_date, snapshot_date, wallet, server=server
+        )
+
+        self.assertEqual(len(report.matched), 1)
+        self.assertEqual(report.matched[0][0], "tx-last-day")
+        self.assertEqual(report.matched[0][7], payout.id)
+        self.assertEqual(report.skipped_no_active_bribe, 0)
+        self.assertEqual(len(report.db_only), 0)
+        self.assertEqual(len(report.missed), 0)
+
+    def test_reconcile_disambiguates_delegatee_via_payout(self):
+        # A delegatee has multiple VoteSnapshots for one
+        # (market_key, voting_account, snapshot_time) with has_delegation=False
+        # — one for their own direct vote (is_delegated=False) and one per
+        # incoming delegation (is_delegated=True, delegate_owner=<delegator>).
+        # Legacy lookup-by-VoteSnapshot flagged such tx as ambiguous and
+        # --fix-db refused to touch them. Payout-first lookup resolves the
+        # VoteSnapshot via the 5-tuple (tx_hash, destination, asset, amount,
+        # reward_amount) which maps 1:1 to a specific VoteSnapshot.
+        snapshot_date = timezone.now().date()
+        created_at = self._at(snapshot_date, 12)
+        wallet = Keypair.random().public_key
+        market = self._make_market(
+            asset1="AQUA:{}".format(Keypair.random().public_key),
+            asset2="native",
+        )
+        bribe = self._make_day_bribe(
+            market,
+            snapshot_date,
+            asset_code=Asset.native().code,
+            asset_issuer="",
+        )
+        delegatee = Keypair.random().public_key
+        delegator = Keypair.random().public_key
+        direct_vote = VoteSnapshot.objects.create(
+            market_key=market,
+            voting_account=delegatee,
+            votes_value=Decimal("100"),
+            snapshot_time=snapshot_date,
+            has_delegation=False,
+            is_delegated=False,
+            delegate_owner=None,
+        )
+        delegated_vote = VoteSnapshot.objects.create(
+            market_key=market,
+            voting_account=delegatee,
+            votes_value=Decimal("250"),
+            snapshot_time=snapshot_date,
+            has_delegation=False,
+            is_delegated=True,
+            delegate_owner=delegator,
+        )
+        direct_payout = self._make_payout(bribe, direct_vote, "tx-direct", Decimal("5.0000000"))
+        delegated_payout = self._make_payout(
+            bribe,
+            delegated_vote,
+            "tx-delegated",
+            Decimal("12.5000000"),
+        )
+        records = [
+            self._chain_record(
+                wallet,
+                delegatee,
+                Asset.native().code,
+                "",
+                Decimal("5.0000000"),
+                "tx-direct",
+                "Bribe: {}".format(market.short_value),
+                created_at.isoformat(),
+            ),
+            self._chain_record(
+                wallet,
+                delegatee,
+                Asset.native().code,
+                "",
+                Decimal("12.5000000"),
+                "tx-delegated",
+                "Bribe: {}".format(market.short_value),
+                created_at.isoformat(),
+                paging_token="tx-delegated-paging",
+            ),
+        ]
+        server, _ = self._mock_reconcile_server(records, [])
+
+        report = self._reconcile(
+            snapshot_date, snapshot_date, wallet, server=server
+        )
+
+        self.assertEqual(len(report.matched), 2)
+        self.assertEqual(len(report.ambiguous), 0)
+        matched_by_tx = {entry[0]: entry for entry in report.matched}
+        self.assertEqual(matched_by_tx["tx-direct"][6], direct_vote.id)
+        self.assertEqual(matched_by_tx["tx-direct"][7], direct_payout.id)
+        self.assertEqual(matched_by_tx["tx-delegated"][6], delegated_vote.id)
+        self.assertEqual(matched_by_tx["tx-delegated"][7], delegated_payout.id)
+
+    def test_reconcile_does_not_mutate_rows_outside_requested_window(self):
+        # X7: --fix-db --from=D --to=D must never create, upgrade, or
+        # downgrade Payouts whose vote_snapshot.snapshot_time lies outside
+        # [D, D]. The chain walk still pads by ±1 day for Counter dedup
+        # and midnight-crossing matches, but Payout / VoteSnapshot lookups
+        # must intersect with the operator's explicit window.
+        snapshot_date = timezone.now().date() - timedelta(days=5)
+        prev_date = snapshot_date - timedelta(days=1)
+        wallet = Keypair.random().public_key
+        market = self._make_market(
+            asset1="AQUA:{}".format(Keypair.random().public_key),
+            asset2="native",
+        )
+        bribe = self._make_bribe(
+            market,
+            asset_code=Asset.native().code,
+            asset_issuer="",
+            start=self._at(prev_date, 0) - timedelta(days=1),
+            stop=self._at(snapshot_date, 0) + timedelta(days=2),
+        )
+        # Out-of-window: vote and failed Payout on prev_date. A chain
+        # payment that matches this row exists too. Without the fix,
+        # --fix-db --from=snapshot_date --to=snapshot_date would upgrade
+        # the failed Payout for prev_date silently.
+        out_of_window_vote = self._make_vote(
+            market, Keypair.random().public_key, prev_date, "100"
+        )
+        out_of_window_failed_payout = self._make_payout(
+            bribe,
+            out_of_window_vote,
+            "tx-prev-day",
+            Decimal("7.0000000"),
+            status=Payout.STATUS_FAILED,
+        )
+        # Out-of-window: pure-chain payment on prev_date with no Payout
+        # but with a matching VoteSnapshot. Without the fix, the
+        # VoteSnapshot fallback would attach this op to a chain_only
+        # entry and apply_fix_db would create a Payout for prev_date.
+        pure_chain_voter = Keypair.random().public_key
+        self._make_vote(market, pure_chain_voter, prev_date, "200")
+        records = [
+            self._chain_record(
+                wallet,
+                out_of_window_vote.voting_account,
+                Asset.native().code,
+                "",
+                Decimal("7.0000000"),
+                "tx-prev-day",
+                "Bribe: {}".format(market.short_value),
+                self._at(prev_date, 12).isoformat(),
+            ),
+            self._chain_record(
+                wallet,
+                pure_chain_voter,
+                Asset.native().code,
+                "",
+                Decimal("13.0000000"),
+                "tx-prev-day-pure",
+                "Bribe: {}".format(market.short_value),
+                self._at(prev_date, 12).isoformat(),
+                paging_token="tx-prev-day-pure",
+            ),
+        ]
+        server, _ = self._mock_reconcile_server(records, [])
+
+        report = self._reconcile(snapshot_date, snapshot_date, wallet, server=server)
+
+        # Neither out-of-window op lands in any mutating bucket.
+        chain_only_tx_hashes = {row[0] for row in report.chain_only}
+        self.assertNotIn("tx-prev-day", chain_only_tx_hashes)
+        self.assertNotIn("tx-prev-day-pure", chain_only_tx_hashes)
+        matched_tx_hashes = {row[0] for row in report.matched}
+        self.assertNotIn("tx-prev-day", matched_tx_hashes)
+
+        # apply_fix_db must not mutate either row.
+        from aquarius_bribes.rewards.reconcile import apply_fix_db
+
+        payout_count_before = Payout.objects.count()
+        counts = apply_fix_db(report, now=timezone.now())
+        self.assertEqual(counts["chain_only_created"], 0)
+        self.assertEqual(counts["chain_only_upgraded"], 0)
+        self.assertEqual(counts["db_only_downgraded"], 0)
+        self.assertEqual(Payout.objects.count(), payout_count_before)
+        out_of_window_failed_payout.refresh_from_db()
+        self.assertEqual(out_of_window_failed_payout.status, Payout.STATUS_FAILED)
+
+    def test_reconcile_does_not_mutate_rows_past_to_date(self):
+        # X6: mirror of X7's prior-day guard for the symmetric future-day
+        # side. The chain pad `chain_to = to_date + 1` brings today's chain
+        # ops into the loop when the operator runs `--fix-db --to D-1` on
+        # day D. Without the X6 guard the resolver's single-VS branch would
+        # silently return `(bribe, VS_{D-1})` for an op whose real Payout
+        # exists on `VS_D` — `apply_fix_db.get_or_create` would then
+        # fabricate a SUCCESS Payout misattributing today's tx_hash to
+        # yesterday's snapshot.
+        today = timezone.now().date()
+        d_chain = today  # chain op lands today (chain_date_for_payout > to_date)
+        d_to = today - timedelta(days=1)
+        d_from = today - timedelta(days=2)
+        wallet = Keypair.random().public_key
+        market = self._make_market(
+            asset1="AQUA:{}".format(Keypair.random().public_key),
+            asset2="native",
+        )
+        # Multi-day bribe spanning all three days so a memo+asset+short_value
+        # match exists on both `d_to` (in window) and `d_chain` (past `to`).
+        bribe = self._make_bribe(
+            market,
+            asset_code=Asset.native().code,
+            asset_issuer="",
+            start=self._at(d_from, 0) - timedelta(days=1),
+            stop=self._at(d_chain, 0) + timedelta(days=2),
+        )
+        voter = Keypair.random().public_key
+        # Voter has VS on both d_to (in window) and today.
+        vote_to = self._make_vote(market, voter, d_to, "100")
+        vote_today = self._make_vote(market, voter, d_chain, "100")
+        # Today's task_pay_rewards ran and wrote a real Payout for VS_today.
+        real_payout = self._make_payout(
+            bribe,
+            vote_today,
+            "tx-today",
+            Decimal("13.0000000"),
+        )
+        # The chain op for today's submission. Payout-first lookup will
+        # MISS this Payout because the candidate `in_window_snapshot_times`
+        # collapses to `[d_to]` (today is outside `[d_from, d_to]`),
+        # excluding `vote_today`'s `snapshot_time`.
+        records = [
+            self._chain_record(
+                wallet,
+                voter,
+                Asset.native().code,
+                "",
+                Decimal("13.0000000"),
+                "tx-today",
+                "Bribe: {}".format(market.short_value),
+                self._at(d_chain, 10).isoformat(),
+            ),
+        ]
+        server, _ = self._mock_reconcile_server(records, [])
+
+        report = self._reconcile(d_from, d_to, wallet, server=server)
+
+        # The future-day chain op must not enter any mutating bucket. It is
+        # accounted for via the dedicated counter so the operator sees that
+        # today's chain activity was acknowledged.
+        self.assertEqual(report.skipped_future_window_chain_op, 1)
+        chain_only_tx_hashes = {row[0] for row in report.chain_only}
+        self.assertNotIn("tx-today", chain_only_tx_hashes)
+        ambiguous_tx_hashes = {row[0] for row in report.ambiguous}
+        self.assertNotIn("tx-today", ambiguous_tx_hashes)
+        # Real Payout on VS_today is past `to_date` and so isn't in the
+        # report's matched set either — but it must still exist intact.
+        matched_tx_hashes = {row[0] for row in report.matched}
+        self.assertNotIn("tx-today", matched_tx_hashes)
+
+        # apply_fix_db must not fabricate a spurious Payout.
+        from aquarius_bribes.rewards.reconcile import apply_fix_db
+
+        payout_count_before = Payout.objects.count()
+        counts = apply_fix_db(report, now=timezone.now())
+        self.assertEqual(counts["chain_only_created"], 0)
+        self.assertEqual(counts["chain_only_upgraded"], 0)
+        self.assertEqual(counts["db_only_downgraded"], 0)
+        self.assertEqual(Payout.objects.count(), payout_count_before)
+        real_payout.refresh_from_db()
+        self.assertEqual(real_payout.vote_snapshot_id, vote_today.id)
+        self.assertEqual(real_payout.status, Payout.STATUS_SUCCESS)
+
+    def test_reconcile_collision_5tuple_routed_to_ambiguous(self):
+        # X4: two Payouts with identical (tx_hash, voting_account,
+        # snapshot_time, asset, reward_amount) — e.g. one account that
+        # delegated the same balance to two different delegatees in the
+        # same market, paid in the same Horizon tx. The Payout-first
+        # lookup cannot disambiguate them, so reconcile must route to
+        # AMBIGUOUS and --fix-db must refuse to downgrade either row.
+        snapshot_date = timezone.now().date()
+        created_at = self._at(snapshot_date, 12)
+        wallet = Keypair.random().public_key
+        market = self._make_market(
+            asset1="AQUA:{}".format(Keypair.random().public_key),
+            asset2="native",
+        )
+        bribe = self._make_day_bribe(
+            market,
+            snapshot_date,
+            asset_code=Asset.native().code,
+            asset_issuer="",
+        )
+        shared_account = Keypair.random().public_key
+        delegatee_1 = Keypair.random().public_key
+        delegatee_2 = Keypair.random().public_key
+        vote_to_d1 = VoteSnapshot.objects.create(
+            market_key=market,
+            voting_account=shared_account,
+            votes_value=Decimal("100"),
+            snapshot_time=snapshot_date,
+            has_delegation=False,
+            is_delegated=True,
+            delegate_owner=delegatee_1,
+        )
+        vote_to_d2 = VoteSnapshot.objects.create(
+            market_key=market,
+            voting_account=shared_account,
+            votes_value=Decimal("100"),
+            snapshot_time=snapshot_date,
+            has_delegation=False,
+            is_delegated=True,
+            delegate_owner=delegatee_2,
+        )
+        payout_1 = self._make_payout(bribe, vote_to_d1, "tx-batch", Decimal("5.0000000"))
+        payout_2 = self._make_payout(bribe, vote_to_d2, "tx-batch", Decimal("5.0000000"))
+        records = [
+            self._chain_record(
+                wallet,
+                shared_account,
+                Asset.native().code,
+                "",
+                Decimal("5.0000000"),
+                "tx-batch",
+                "Bribe: {}".format(market.short_value),
+                created_at.isoformat(),
+            ),
+            self._chain_record(
+                wallet,
+                shared_account,
+                Asset.native().code,
+                "",
+                Decimal("5.0000000"),
+                "tx-batch",
+                "Bribe: {}".format(market.short_value),
+                created_at.isoformat(),
+                paging_token="tx-batch-2",
+            ),
+        ]
+        server, _ = self._mock_reconcile_server(records, [])
+
+        report = self._reconcile(snapshot_date, snapshot_date, wallet, server=server)
+
+        self.assertEqual(len(report.matched), 0)
+        self.assertEqual(len(report.db_only), 0)
+        # Both chain ops + both db-side Payouts surface as AMBIGUOUS.
+        # The operator must resolve manually — --fix-db never touches
+        # ambiguous rows.
+        self.assertGreaterEqual(len(report.ambiguous), 2)
+
+        # apply_fix_db must not touch either Payout.
+        from aquarius_bribes.rewards.reconcile import apply_fix_db
+
+        counts = apply_fix_db(report, now=timezone.now())
+        self.assertEqual(counts["chain_only_created"], 0)
+        self.assertEqual(counts["db_only_downgraded"], 0)
+        payout_1.refresh_from_db()
+        payout_2.refresh_from_db()
+        self.assertEqual(payout_1.status, Payout.STATUS_SUCCESS)
+        self.assertEqual(payout_2.status, Payout.STATUS_SUCCESS)
+
+    def test_reconcile_missed_detects_partial_delegatee_payout(self):
+        # X3: a single voting_account can hold multiple has_delegation=False
+        # VoteSnapshots on the same date (own direct vote + incoming
+        # delegations). If ONE of them was paid on-chain + has a Payout and
+        # ANOTHER was never paid, the MISSED bucket must still flag the
+        # unpaid snapshot. A per-account matched-set would swallow it.
+        snapshot_date = timezone.now().date()
+        created_at = self._at(snapshot_date, 12)
+        wallet = Keypair.random().public_key
+        market = self._make_market(
+            asset1="AQUA:{}".format(Keypair.random().public_key),
+            asset2="native",
+        )
+        bribe = self._make_day_bribe(
+            market,
+            snapshot_date,
+            asset_code=Asset.native().code,
+            asset_issuer="",
+        )
+        delegatee = Keypair.random().public_key
+        delegator = Keypair.random().public_key
+        direct_vote = VoteSnapshot.objects.create(
+            market_key=market,
+            voting_account=delegatee,
+            votes_value=Decimal("100"),
+            snapshot_time=snapshot_date,
+            has_delegation=False,
+            is_delegated=False,
+            delegate_owner=None,
+        )
+        delegated_vote = VoteSnapshot.objects.create(
+            market_key=market,
+            voting_account=delegatee,
+            votes_value=Decimal("250"),
+            snapshot_time=snapshot_date,
+            has_delegation=False,
+            is_delegated=True,
+            delegate_owner=delegator,
+        )
+        # Only the direct vote was paid — Payout + chain op both present.
+        self._make_payout(bribe, direct_vote, "tx-direct", Decimal("5.0000000"))
+        records = [
+            self._chain_record(
+                wallet,
+                delegatee,
+                Asset.native().code,
+                "",
+                Decimal("5.0000000"),
+                "tx-direct",
+                "Bribe: {}".format(market.short_value),
+                created_at.isoformat(),
+            ),
+        ]
+        server, _ = self._mock_reconcile_server(records, [])
+
+        report = self._reconcile(
+            snapshot_date, snapshot_date, wallet, server=server
+        )
+
+        self.assertEqual(len(report.matched), 1)
+        self.assertEqual(len(report.chain_only), 0)
+        self.assertEqual(len(report.db_only), 0)
+        # delegated_vote has neither a Payout nor a chain op — must appear
+        # in MISSED despite sharing voting_account with the matched row.
+        missed_vote_ids = {entry[1] for entry in report.missed}
+        self.assertIn(delegated_vote.id, missed_vote_ids)
+        self.assertNotIn(direct_vote.id, missed_vote_ids)
+
+    def test_reconcile_paginates_across_multiple_pages(self):
+        snapshot_date = timezone.now().date()
+        created_at = self._at(snapshot_date, 12)
+        wallet = Keypair.random().public_key
+        page_1 = []
+        page_2 = []
+        for index in range(200):
+            record = self._chain_record(
+                wallet,
+                Keypair.random().public_key,
+                Asset.native().code,
+                "",
+                Decimal("1.0000000"),
+                "tx-{}".format(index),
+                "ignored",
+                created_at.isoformat(),
+                paging_token="page-1-{}".format(index),
+            )
+            record["transaction"]["memo_type"] = "none"
+            record["transaction"]["memo"] = ""
+            page_1.append(record)
+        for index in range(200, 400):
+            record = self._chain_record(
+                wallet,
+                Keypair.random().public_key,
+                Asset.native().code,
+                "",
+                Decimal("1.0000000"),
+                "tx-{}".format(index),
+                "ignored",
+                created_at.isoformat(),
+                paging_token="page-2-{}".format(index),
+            )
+            record["transaction"]["memo_type"] = "none"
+            record["transaction"]["memo"] = ""
+            page_2.append(record)
+        server, builder = self._mock_reconcile_server(page_1, page_2, [])
+
+        report = self._reconcile(snapshot_date, snapshot_date, wallet, server=server)
+
+        self.assertGreaterEqual(builder.call.call_count, 3)
+        self.assertEqual(len(report.matched), 0)
+        self.assertEqual(len(report.chain_only), 0)
+        self.assertEqual(len(report.db_only), 0)
+        self.assertEqual(len(report.ambiguous), 0)
+        self.assertEqual(len(report.missed), 0)
+
+    def test_reconcile_memo_filter_drops_non_bribe_payments(self):
+        snapshot_date = timezone.now().date()
+        created_at = self._at(snapshot_date, 12)
+        wallet = Keypair.random().public_key
+        market = self._make_market(
+            asset1="AQUA:{}".format(Keypair.random().public_key),
+            asset2="sUSD:{}".format(Keypair.random().public_key),
+        )
+        self._make_day_bribe(
+            market,
+            snapshot_date,
+            asset_code=Asset.native().code,
+            asset_issuer="",
+        )
+        vote = self._make_vote(
+            market, Keypair.random().public_key, snapshot_date, "100"
+        )
+        record_1 = self._chain_record(
+            wallet,
+            Keypair.random().public_key,
+            Asset.native().code,
+            "",
+            Decimal("1.0000000"),
+            "tx-1",
+            "",
+            created_at.isoformat(),
+        )
+        record_1["transaction"]["memo_type"] = "none"
+        record_2 = self._chain_record(
+            wallet,
+            Keypair.random().public_key,
+            Asset.native().code,
+            "",
+            Decimal("2.0000000"),
+            "tx-2",
+            "Hello World",
+            created_at.isoformat(),
+        )
+        record_3 = self._chain_record(
+            wallet,
+            vote.voting_account,
+            Asset.native().code,
+            "",
+            Decimal("3.0000000"),
+            "tx-3",
+            "Bribe: {}".format(market.short_value),
+            created_at.isoformat(),
+        )
+        server, _ = self._mock_reconcile_server([record_1, record_2, record_3], [])
+
+        report = self._reconcile(snapshot_date, snapshot_date, wallet, server=server)
+
+        self.assertEqual(len(report.chain_only), 1)
+        self.assertEqual(report.chain_only[0][0], "tx-3")
+        self.assertEqual(len(report.matched), 0)
+        self.assertEqual(len(report.db_only), 0)
+        self.assertEqual(len(report.ambiguous), 0)
+        self.assertEqual(len(report.missed), 0)
+
+    def _build_reconcile_command_report(self):
+        from datetime import date as _date
+        from aquarius_bribes.rewards.reconcile import ReconcileReport
+
+        wallet = "GAORXNBAWRIOJ7HRMCTWW2MIB6PYWSC7OKHGIXWTJXYRTZRSHP356TW3"
+        from_date = _date(2026, 4, 7)
+        to_date = _date(2026, 4, 9)
+
+        return ReconcileReport(
+            from_date=from_date,
+            to_date=to_date,
+            bribe_wallet=wallet,
+            chain_payments_count=4,
+            db_success_count=3,
+            db_failed_count=1,
+            matched=[
+                (
+                    "txhash1",
+                    "GAACC1",
+                    "AQUA",
+                    "GISSUER",
+                    Decimal("10.0000000"),
+                    1,
+                    101,
+                    201,
+                ),
+                (
+                    "txhash2",
+                    "GAACC2",
+                    "AQUA",
+                    "GISSUER",
+                    Decimal("5.0000000"),
+                    1,
+                    102,
+                    202,
+                ),
+            ],
+            chain_only=[
+                (
+                    "txhash3",
+                    "GAACC3",
+                    "AQUA",
+                    "GISSUER",
+                    Decimal("7.0000000"),
+                    1,
+                    103,
+                    "Bribe: X/Y",
+                    None,
+                    None,
+                ),
+            ],
+            db_only=[
+                (
+                    301,
+                    "txhash4",
+                    "GAACC4",
+                    "AQUA",
+                    "GISSUER",
+                    Decimal("3.0000000"),
+                    1,
+                    _date(2026, 4, 8),
+                ),
+            ],
+            ambiguous=[],
+            missed=[
+                (
+                    1,
+                    501,
+                    _date(2026, 4, 8),
+                    "GAACC5",
+                    "AQUA",
+                    "GISSUER",
+                    Decimal("2.0000000"),
+                ),
+                (
+                    1,
+                    502,
+                    _date(2026, 4, 8),
+                    "GAACC6",
+                    "AQUA",
+                    "GISSUER",
+                    Decimal("2.0000000"),
+                ),
+                (
+                    1,
+                    503,
+                    _date(2026, 4, 9),
+                    "GAACC7",
+                    "AQUA",
+                    "GISSUER",
+                    Decimal("2.0000000"),
+                ),
+            ],
+            per_bribe_missed={1: {_date(2026, 4, 8): 2, _date(2026, 4, 9): 1}},
+        )
+
+    def _reconcile_command_patch(self, report):
+        from contextlib import nullcontext
+        from importlib.util import find_spec
+
+        module_name = (
+            "aquarius_bribes.rewards.management.commands.reconcile_bribe_payouts"
+        )
+        if find_spec(module_name) is None:
+            return nullcontext()
+        return mock.patch(
+            "{}.reconcile_bribe_payouts".format(module_name),
+            return_value=report,
+        )
+
+    def _make_report(self, snapshot_date, **kwargs):
+        from aquarius_bribes.rewards.reconcile import ReconcileReport
+
+        return ReconcileReport(
+            from_date=snapshot_date,
+            to_date=snapshot_date,
+            bribe_wallet=kwargs.pop("bribe_wallet", Keypair.random().public_key),
+            **kwargs,
+        )
+
+    def test_reconcile_command_text_output(self):
+        report = self._build_reconcile_command_report()
+        buf = io.StringIO()
+
+        with self._reconcile_command_patch(report):
+            with override_settings(BRIBE_WALLET_ADDRESS="GAORXNBAWRIOJ7HRMCTWW2MIB6PYWSC7OKHGIXWTJXYRTZRSHP356TW3"):
+                call_command(
+                    "reconcile_bribe_payouts",
+                    "--from=2026-04-07",
+                    "--to=2026-04-09",
+                    stdout=buf,
+                )
+
+        output = buf.getvalue()
+        self.assertIn("Bucket MATCHED: 2", output)
+        self.assertIn("Bucket CHAIN_ONLY: 1", output)
+        self.assertIn("Bucket DB_ONLY: 1", output)
+        self.assertIn("Bucket MISSED: 3", output)
+        self.assertIn("2026-04-07", output)
+        self.assertIn("2026-04-09", output)
+
+    def test_fix_db_chain_only_creates_payout(self):
+        from aquarius_bribes.rewards.reconcile import apply_fix_db
+
+        snapshot_date = timezone.now().date()
+        created_at = self._at(snapshot_date, 12)
+        market = self._make_market()
+        bribe = self._make_bribe(
+            market,
+            asset_code=Asset.native().code,
+            asset_issuer="",
+        )
+        vote = self._make_vote(
+            market, Keypair.random().public_key, snapshot_date, "100"
+        )
+        report = self._make_report(
+            snapshot_date,
+            chain_only=[
+                (
+                    "tx-create",
+                    vote.voting_account,
+                    Asset.native().code,
+                    "",
+                    Decimal("10.0000000"),
+                    bribe.id,
+                    vote.id,
+                    "Bribe: {}".format(market.short_value),
+                    created_at,
+                    None,
+                )
+            ],
+        )
+
+        before_count = Payout.objects.count()
+
+        counts = apply_fix_db(report)
+
+        self.assertEqual(Payout.objects.count(), before_count + 1)
+        payout = Payout.objects.get(stellar_transaction_id="tx-create")
+        self.assertEqual(payout.status, Payout.STATUS_SUCCESS)
+        self.assertTrue(payout.message.startswith("reconciled "))
+        self.assertEqual(counts["chain_only_created"], 1)
+        self.assertEqual(counts["chain_only_upgraded"], 0)
+
+    def test_fix_db_chain_only_upgrades_failed_to_success(self):
+        from aquarius_bribes.rewards.reconcile import apply_fix_db
+
+        snapshot_date = timezone.now().date()
+        created_at = self._at(snapshot_date, 12)
+        market = self._make_market()
+        bribe = self._make_bribe(
+            market,
+            asset_code=Asset.native().code,
+            asset_issuer="",
+        )
+        vote = self._make_vote(
+            market, Keypair.random().public_key, snapshot_date, "100"
+        )
+        payout = Payout.objects.create(
+            bribe=bribe,
+            vote_snapshot=vote,
+            stellar_transaction_id="tx-upgrade",
+            status=Payout.STATUS_FAILED,
+            message="old failure",
+            reward_amount=Decimal("11.0000000"),
+            asset_code=Asset.native().code,
+            asset_issuer="",
+        )
+        report = self._make_report(
+            snapshot_date,
+            chain_only=[
+                (
+                    "tx-upgrade",
+                    vote.voting_account,
+                    Asset.native().code,
+                    "",
+                    Decimal("11.0000000"),
+                    bribe.id,
+                    vote.id,
+                    "Bribe: {}".format(market.short_value),
+                    created_at,
+                    payout.id,
+                )
+            ],
+        )
+
+        counts = apply_fix_db(report)
+
+        payout.refresh_from_db()
+        self.assertEqual(Payout.objects.count(), 1)
+        self.assertEqual(payout.status, Payout.STATUS_SUCCESS)
+        self.assertIn("reconciled", payout.message)
+        self.assertEqual(counts["chain_only_created"], 0)
+        self.assertEqual(counts["chain_only_upgraded"], 1)
+
+    def test_fix_db_db_only_downgrades_to_failed(self):
+        from aquarius_bribes.rewards.reconcile import apply_fix_db
+
+        snapshot_date = timezone.now().date()
+        market = self._make_market()
+        bribe = self._make_bribe(
+            market,
+            asset_code=Asset.native().code,
+            asset_issuer="",
+        )
+        vote = self._make_vote(
+            market, Keypair.random().public_key, snapshot_date, "100"
+        )
+        payout = self._make_payout(bribe, vote, "TXHASH", Decimal("12.0000000"))
+        report = self._make_report(
+            snapshot_date,
+            db_only=[
+                (
+                    payout.id,
+                    "TXHASH",
+                    vote.voting_account,
+                    Asset.native().code,
+                    "",
+                    Decimal("12.0000000"),
+                    bribe.id,
+                    snapshot_date,
+                )
+            ],
+        )
+
+        counts = apply_fix_db(report)
+
+        payout.refresh_from_db()
+        self.assertEqual(payout.status, Payout.STATUS_FAILED)
+        self.assertIn("db_only", payout.message)
+        self.assertIn("reconciled", payout.message)
+        self.assertEqual(counts["db_only_downgraded"], 1)
+
+    def test_fix_db_idempotent_rerun_no_change(self):
+        from aquarius_bribes.rewards.reconcile import apply_fix_db
+
+        snapshot_date = timezone.now().date()
+        created_at = self._at(snapshot_date, 12)
+        market = self._make_market()
+        bribe = self._make_bribe(
+            market,
+            asset_code=Asset.native().code,
+            asset_issuer="",
+        )
+        create_vote = self._make_vote(
+            market, Keypair.random().public_key, snapshot_date, "100"
+        )
+        downgrade_vote = self._make_vote(
+            market, Keypair.random().public_key, snapshot_date, "200"
+        )
+        downgrade_payout = self._make_payout(
+            bribe,
+            downgrade_vote,
+            "tx-downgrade",
+            Decimal("4.0000000"),
+        )
+        now = timezone.make_aware(datetime.combine(snapshot_date, time(hour=18)))
+        report = self._make_report(
+            snapshot_date,
+            chain_only=[
+                (
+                    "tx-create-idempotent",
+                    create_vote.voting_account,
+                    Asset.native().code,
+                    "",
+                    Decimal("3.0000000"),
+                    bribe.id,
+                    create_vote.id,
+                    "Bribe: {}".format(market.short_value),
+                    created_at,
+                    None,
+                )
+            ],
+            db_only=[
+                (
+                    downgrade_payout.id,
+                    "tx-downgrade",
+                    downgrade_vote.voting_account,
+                    Asset.native().code,
+                    "",
+                    Decimal("4.0000000"),
+                    bribe.id,
+                    snapshot_date,
+                )
+            ],
+        )
+
+        first_counts = apply_fix_db(report, now=now)
+        payout_count = Payout.objects.count()
+        second_counts = apply_fix_db(report, now=now)
+
+        self.assertEqual(first_counts["chain_only_created"], 1)
+        self.assertEqual(first_counts["db_only_downgraded"], 1)
+        self.assertEqual(Payout.objects.count(), payout_count)
+        self.assertEqual(second_counts["chain_only_created"], 0)
+        self.assertEqual(second_counts["chain_only_upgraded"], 0)
+        self.assertEqual(second_counts["db_only_downgraded"], 0)
+
+    def test_fix_db_requires_confirm_without_yes(self):
+        snapshot_date = timezone.now().date() - timedelta(days=1)
+        report = self._make_report(
+            snapshot_date,
+            chain_only=[
+                (
+                    "tx-confirm",
+                    Keypair.random().public_key,
+                    Asset.native().code,
+                    "",
+                    Decimal("1.0000000"),
+                    1,
+                    1,
+                    "Bribe: AQUA/XLM",
+                    self._at(snapshot_date, 12),
+                    None,
+                )
+            ],
+        )
+        before_count = Payout.objects.count()
+
+        with mock.patch(
+            "aquarius_bribes.rewards.management.commands.reconcile_bribe_payouts.reconcile_bribe_payouts",
+            return_value=report,
+        ):
+            with mock.patch("builtins.input", return_value="n"):
+                with mock.patch(
+                    "aquarius_bribes.rewards.management.commands.reconcile_bribe_payouts.apply_fix_db"
+                ) as mock_apply:
+                    with override_settings(BRIBE_WALLET_ADDRESS=Keypair.random().public_key):
+                        call_command(
+                            "reconcile_bribe_payouts",
+                            "--fix-db",
+                            "--from={}".format(snapshot_date),
+                            "--to={}".format(snapshot_date),
+                        )
+
+        mock_apply.assert_not_called()
+        self.assertEqual(Payout.objects.count(), before_count)
+
+    def test_fix_db_refuses_today_and_future(self):
+        # --fix-db on today or future dates is an unconditional error —
+        # task_pay_rewards is still writing Payouts for today, so any
+        # reconcile report would go stale between build and apply, risking
+        # downgrade of legitimate SUCCESS payouts.
+        today = timezone.now().date()
+        tomorrow = today + timedelta(days=1)
+
+        for bad_date in (today, tomorrow):
+            with self.assertRaisesMessage(CommandError, "--fix-db cannot touch date"):
+                with override_settings(BRIBE_WALLET_ADDRESS=Keypair.random().public_key):
+                    call_command(
+                        "reconcile_bribe_payouts",
+                        "--fix-db",
+                        "--from={}".format(bad_date),
+                        "--to={}".format(bad_date),
+                    )
+
+    def test_fix_db_sets_and_clears_active_flag(self):
+        from django.core.cache import cache
+        from aquarius_bribes.rewards.tasks import PAY_REWARDS_FIX_DB_ACTIVE_KEY
+
+        snapshot_date = timezone.now().date() - timedelta(days=1)
+        report = self._make_report(snapshot_date)
+
+        def assert_flag_set(*args, **kwargs):
+            self.assertTrue(cache.get(PAY_REWARDS_FIX_DB_ACTIVE_KEY))
+            return {
+                "chain_only_created": 0,
+                "chain_only_upgraded": 0,
+                "db_only_downgraded": 0,
+                "ambiguous_skipped": 0,
+                "chain_orphan_skipped": 0,
+                "missed_skipped": 0,
+            }
+
+        with mock.patch(
+            "aquarius_bribes.rewards.management.commands.reconcile_bribe_payouts.reconcile_bribe_payouts",
+            return_value=report,
+        ):
+            with mock.patch(
+                "aquarius_bribes.rewards.management.commands.reconcile_bribe_payouts.apply_fix_db",
+                side_effect=assert_flag_set,
+            ):
+                with mock.patch("builtins.input", return_value="y"):
+                    with override_settings(BRIBE_WALLET_ADDRESS=Keypair.random().public_key):
+                        call_command(
+                            "reconcile_bribe_payouts",
+                            "--fix-db",
+                            "--from={}".format(snapshot_date),
+                            "--to={}".format(snapshot_date),
+                        )
+
+        self.assertFalse(cache.get(PAY_REWARDS_FIX_DB_ACTIVE_KEY))
+
+        with mock.patch(
+            "aquarius_bribes.rewards.management.commands.reconcile_bribe_payouts.reconcile_bribe_payouts",
+            return_value=report,
+        ):
+            with mock.patch(
+                "aquarius_bribes.rewards.management.commands.reconcile_bribe_payouts.apply_fix_db",
+                side_effect=RuntimeError("boom"),
+            ):
+                with mock.patch("builtins.input", return_value="y"):
+                    with override_settings(BRIBE_WALLET_ADDRESS=Keypair.random().public_key):
+                        with self.assertRaisesMessage(RuntimeError, "boom"):
+                            call_command(
+                                "reconcile_bribe_payouts",
+                                "--fix-db",
+                                "--from={}".format(snapshot_date),
+                                "--to={}".format(snapshot_date),
+                            )
+
+        self.assertFalse(cache.get(PAY_REWARDS_FIX_DB_ACTIVE_KEY))
+
+    def test_fix_db_refuses_when_active_flag_already_held(self):
+        # Second operator running --fix-db while another run holds the
+        # cache lock must hard-abort — otherwise both runs would enter
+        # apply_fix_db and the CHAIN_ONLY create loop could double-insert
+        # Payouts. cache.add (not cache.set) makes the guard atomic, and
+        # the existing owner's token must stay intact.
+        from django.core.cache import cache
+        from aquarius_bribes.rewards.tasks import PAY_REWARDS_FIX_DB_ACTIVE_KEY
+
+        snapshot_date = timezone.now().date() - timedelta(days=1)
+        report = self._make_report(snapshot_date)
+
+        cache.set(PAY_REWARDS_FIX_DB_ACTIVE_KEY, "other-operator", 60)
+        try:
+            with mock.patch(
+                "aquarius_bribes.rewards.management.commands.reconcile_bribe_payouts.reconcile_bribe_payouts",
+                return_value=report,
+            ):
+                with mock.patch(
+                    "aquarius_bribes.rewards.management.commands.reconcile_bribe_payouts.apply_fix_db"
+                ) as mock_apply:
+                    with mock.patch("builtins.input", return_value="y"):
+                        with override_settings(BRIBE_WALLET_ADDRESS=Keypair.random().public_key):
+                            with self.assertRaisesMessage(
+                                CommandError, "Another --fix-db run is in progress"
+                            ):
+                                call_command(
+                                    "reconcile_bribe_payouts",
+                                    "--fix-db",
+                                    "--from={}".format(snapshot_date),
+                                    "--to={}".format(snapshot_date),
+                                )
+
+            mock_apply.assert_not_called()
+            # The other operator's token must survive — the refused run
+            # never touches a key it does not own.
+            self.assertEqual(
+                cache.get(PAY_REWARDS_FIX_DB_ACTIVE_KEY), "other-operator"
+            )
+        finally:
+            cache.delete(PAY_REWARDS_FIX_DB_ACTIVE_KEY)
+
+    def test_fix_db_ambiguous_bucket_never_mutates(self):
+        from aquarius_bribes.rewards.reconcile import apply_fix_db
+
+        snapshot_date = timezone.now().date()
+        market = self._make_market()
+        bribe = self._make_bribe(
+            market,
+            asset_code=Asset.native().code,
+            asset_issuer="",
+        )
+        vote = self._make_vote(
+            market, Keypair.random().public_key, snapshot_date, "100"
+        )
+        payout = self._make_payout(bribe, vote, "tx-existing", Decimal("5.0000000"))
+        report = self._make_report(
+            snapshot_date,
+            ambiguous=[
+                (
+                    "tx-ambiguous",
+                    Keypair.random().public_key,
+                    Asset.native().code,
+                    "",
+                    Decimal("1.0000000"),
+                    "Bribe: AQUA/XLM",
+                    self._at(snapshot_date, 12),
+                    [bribe.id, bribe.id + 1],
+                )
+            ],
+        )
+
+        counts = apply_fix_db(report)
+
+        payout.refresh_from_db()
+        self.assertEqual(Payout.objects.count(), 1)
+        self.assertEqual(payout.status, Payout.STATUS_SUCCESS)
+        self.assertEqual(counts["ambiguous_skipped"], 1)
+
+    def test_fix_db_orphan_chain_payment_never_mutates(self):
+        from aquarius_bribes.rewards.reconcile import apply_fix_db
+
+        snapshot_date = timezone.now().date()
+        report = self._make_report(
+            snapshot_date,
+            chain_only=[
+                (
+                    "tx-orphan",
+                    Keypair.random().public_key,
+                    Asset.native().code,
+                    "",
+                    Decimal("1.0000000"),
+                    1,
+                    None,
+                    "Bribe: AQUA/XLM",
+                    self._at(snapshot_date, 12),
+                    None,
+                )
+            ],
+        )
+
+        counts = apply_fix_db(report)
+
+        self.assertEqual(Payout.objects.count(), 0)
+        self.assertEqual(counts["chain_orphan_skipped"], 1)
+        self.assertEqual(counts["chain_only_created"], 0)
+
+    def test_completeness_threshold_critical_when_zero_paid(self):
+        from aquarius_bribes.rewards.management.commands.check_payout_completeness import (
+            run_completeness_check,
+        )
+
+        snapshot_date = timezone.now().date()
+        market = self._make_market()
+        self._make_day_bribe(
+            market,
+            snapshot_date,
+            asset_code=Asset.native().code,
+            asset_issuer="",
+            total=Decimal("700"),
+        )
+        for _ in range(3):
+            self._make_vote(
+                market, Keypair.random().public_key, snapshot_date, "250000"
+            )
+
+        result = run_completeness_check(
+            date=snapshot_date,
+            threshold_pct=5,
+            emit_alert=False,
+        )
+
+        self.assertEqual(len(result["results"]), 1)
+        self.assertEqual(result["results"][0]["severity"], "CRITICAL")
+        self.assertTrue(result["has_critical"])
+        self.assertFalse(result["has_warning"])
+
+        with self.assertRaises(SystemExit) as exc:
+            call_command(
+                "check_payout_completeness",
+                "--date",
+                str(snapshot_date),
+                stdout=io.StringIO(),
+            )
+        self.assertEqual(exc.exception.code, 1)
+
+    def test_completeness_threshold_warning_when_below_threshold(self):
+        from aquarius_bribes.rewards.management.commands.check_payout_completeness import (
+            run_completeness_check,
+        )
+
+        snapshot_date = timezone.now().date()
+        market = self._make_market()
+        bribe = self._make_day_bribe(
+            market,
+            snapshot_date,
+            asset_code=Asset.native().code,
+            asset_issuer="",
+            total=Decimal("0.0007000"),
+        )
+        votes = [
+            self._make_vote(
+                market, Keypair.random().public_key, snapshot_date, "250000"
+            )
+            for _ in range(100)
+        ]
+        for vote in votes[:90]:
+            self._make_payout(bribe, vote, "tx-{}".format(vote.id), Decimal("1.0000000"))
+
+        result = run_completeness_check(
+            date=snapshot_date,
+            threshold_pct=5,
+            emit_alert=False,
+        )
+
+        self.assertEqual(len(result["results"]), 1)
+        self.assertEqual(result["results"][0]["severity"], "WARNING")
+        self.assertEqual(result["results"][0]["payable"], 100)
+        self.assertEqual(result["results"][0]["paid"], 90)
+        self.assertEqual(result["results"][0]["missing"], 10)
+        self.assertFalse(result["has_critical"])
+        self.assertTrue(result["has_warning"])
+
+        buf = io.StringIO()
+        call_command(
+            "check_payout_completeness",
+            "--date",
+            str(snapshot_date),
+            stdout=buf,
+        )
+        self.assertIn("WARNING", buf.getvalue())
+
+    def test_completeness_ignores_delegated_votes(self):
+        from aquarius_bribes.rewards.management.commands.check_payout_completeness import (
+            run_completeness_check,
+        )
+
+        snapshot_date = timezone.now().date()
+        market = self._make_market()
+        bribe = self._make_day_bribe(
+            market,
+            snapshot_date,
+            asset_code=Asset.native().code,
+            asset_issuer="",
+        )
+        payable_votes = [
+            self._make_vote(
+                market, Keypair.random().public_key, snapshot_date, "250000"
+            )
+            for _ in range(2)
+        ]
+        for _ in range(3):
+            self._make_vote(
+                market,
+                Keypair.random().public_key,
+                snapshot_date,
+                "250000",
+                has_delegation=True,
+            )
+        for vote in payable_votes:
+            self._make_payout(bribe, vote, "tx-{}".format(vote.id), Decimal("1.0000000"))
+
+        result = run_completeness_check(
+            date=snapshot_date,
+            threshold_pct=5,
+            emit_alert=False,
+        )
+
+        self.assertEqual(result["results"][0]["payable"], 2)
+        self.assertEqual(result["results"][0]["paid"], 2)
+        self.assertEqual(result["results"][0]["severity"], "OK")
+
+    def test_completeness_ignores_accounts_without_trustline_for_non_native_bribe(
+        self,
+    ):
+        from aquarius_bribes.rewards.management.commands.check_payout_completeness import (
+            run_completeness_check,
+        )
+
+        snapshot_date = timezone.now().date()
+        issuer = Keypair.random().public_key
+        market = self._make_market()
+        bribe = self._make_day_bribe(
+            market,
+            snapshot_date,
+            asset_code="USDC",
+            asset_issuer=issuer,
+        )
+        votes = [
+            self._make_vote(
+                market, Keypair.random().public_key, snapshot_date, "250000"
+            )
+            for _ in range(4)
+        ]
+        for vote in votes[:2]:
+            self._make_holder(vote.voting_account, "USDC", issuer, self._at(snapshot_date, 12))
+            Payout.objects.create(
+                bribe=bribe,
+                vote_snapshot=vote,
+                stellar_transaction_id="tx-{}".format(vote.id),
+                status=Payout.STATUS_SUCCESS,
+                reward_amount=Decimal("1.0000000"),
+                asset_code="USDC",
+                asset_issuer=issuer,
+            )
+
+        result = run_completeness_check(
+            date=snapshot_date,
+            threshold_pct=5,
+            emit_alert=False,
+        )
+
+        self.assertEqual(result["results"][0]["payable"], 2)
+        self.assertEqual(result["results"][0]["paid"], 2)
+        self.assertEqual(result["results"][0]["severity"], "OK")
+
+    def test_completeness_ignores_dust_votes_below_min_threshold(self):
+        from aquarius_bribes.rewards.management.commands.check_payout_completeness import (
+            run_completeness_check,
+        )
+
+        snapshot_date = timezone.now().date()
+        market = self._make_market()
+        bribe = self._make_day_bribe(
+            market,
+            snapshot_date,
+            asset_code=Asset.native().code,
+            asset_issuer="",
+            total=Decimal("0.0007000"),
+        )
+        regular_votes, _dust_vote = self._make_dust_votes(market, snapshot_date)
+        for vote in regular_votes:
+            self._make_payout(bribe, vote, "tx-{}".format(vote.id), Decimal("25.0000000"))
+
+        result = run_completeness_check(
+            date=snapshot_date,
+            threshold_pct=5,
+            emit_alert=False,
+        )
+
+        self.assertEqual(result["results"][0]["payable"], 4)
+        self.assertEqual(result["results"][0]["paid"], 4)
+        self.assertEqual(result["results"][0]["severity"], "OK")
+
+    def test_completeness_task_retries_when_pay_rewards_flag_set(self):
+        from aquarius_bribes.rewards.tasks import (
+            PAY_REWARDS_TASK_ACTIVE_KEY,
+            task_check_payout_completeness,
+        )
+
+        def fake_cache_get(key, default=False):
+            if key == PAY_REWARDS_TASK_ACTIVE_KEY:
+                return True
+            return False
+
+        with mock.patch(
+            "aquarius_bribes.rewards.tasks.cache.get", side_effect=fake_cache_get
+        ):
+            with mock.patch.object(task_check_payout_completeness, "retry") as mock_retry:
+                mock_retry.return_value = None
+                task_check_payout_completeness.run()
+
+        mock_retry.assert_called_once()
+        # Retry must thread the frozen snapshot_date through so a retry
+        # crossing UTC midnight still checks the date the task was
+        # originally dispatched for (X6).
+        retry_kwargs = mock_retry.call_args.kwargs
+        self.assertIn("args", retry_kwargs)
+        (snapshot_date_iso,) = retry_kwargs["args"]
+        expected = (timezone.now().date() - timedelta(days=1)).isoformat()
+        self.assertEqual(snapshot_date_iso, expected)
+
+    def test_completeness_task_uses_frozen_date_across_retries(self):
+        # On a retry dispatched after UTC midnight, the task must still
+        # operate on the original snapshot_date passed through retry args,
+        # not recompute (today - 1) from the new wall-clock. Without this,
+        # a 01:00 UTC task for "yesterday" delayed past midnight would
+        # silently check the previous "today" (still being written).
+        from aquarius_bribes.rewards.tasks import task_check_payout_completeness
+
+        original_snapshot_date = date(2026, 4, 19)
+
+        with mock.patch(
+            "aquarius_bribes.rewards.tasks.cache.get", return_value=False
+        ):
+            with mock.patch(
+                "aquarius_bribes.rewards.management.commands"
+                ".check_payout_completeness.run_completeness_check"
+            ) as mock_run:
+                task_check_payout_completeness.run(
+                    snapshot_date_iso=original_snapshot_date.isoformat()
+                )
+
+        mock_run.assert_called_once()
+        self.assertEqual(mock_run.call_args.kwargs["date"], original_snapshot_date)
+
+    def test_completeness_task_emits_warning_when_retries_exhausted(self):
+        from celery.exceptions import MaxRetriesExceededError
+        from aquarius_bribes.rewards.tasks import (
+            PAY_REWARDS_TASK_ACTIVE_KEY,
+            task_check_payout_completeness,
+        )
+
+        def fake_cache_get(key, default=False):
+            if key == PAY_REWARDS_TASK_ACTIVE_KEY:
+                return True
+            return False
+
+        with mock.patch(
+            "aquarius_bribes.rewards.tasks.cache.get", side_effect=fake_cache_get
+        ):
+            with mock.patch.object(
+                task_check_payout_completeness,
+                "retry",
+                side_effect=MaxRetriesExceededError("retries exhausted"),
+            ):
+                with mock.patch("sentry_sdk.capture_message") as mock_capture:
+                    task_check_payout_completeness.run()
+
+        mock_capture.assert_called_once()
+        self.assertIn("completeness-check-skipped", mock_capture.call_args[0][0])
+        self.assertEqual(mock_capture.call_args[1]["level"], "warning")
+
     @override_settings(
         PAYOUT_COMPLETENESS_ALERT_ENABLED=True,
         PAYOUT_COMPLETENESS_THRESHOLD_PCT=5,
     )
+    def test_completeness_task_emits_sentry_when_setting_enabled(self):
+        from aquarius_bribes.rewards.tasks import task_check_payout_completeness
+
+        snapshot_date = timezone.now().date() - timedelta(days=1)
+        market = self._make_market()
+        self._make_day_bribe(
+            market,
+            snapshot_date,
+            asset_code=Asset.native().code,
+            asset_issuer="",
+        )
+        self._make_vote(market, Keypair.random().public_key, snapshot_date, "250000")
+
+        with mock.patch(
+            "aquarius_bribes.rewards.tasks.cache.get", return_value=False
+        ):
+            with mock.patch(
+                "aquarius_bribes.rewards.management.commands.check_payout_completeness.sentry_sdk.capture_message"
+            ) as mock_capture:
+                task_check_payout_completeness.run()
+
+        mock_capture.assert_called_once()
+        self.assertEqual(mock_capture.call_args[1]["level"], "error")
+
+    def test_completeness_task_does_not_block_on_load_votes_or_load_trustors_flags(
+        self,
+    ):
+        from aquarius_bribes.rewards.tasks import (
+            LOAD_TRUSTORS_TASK_ACTIVE_KEY,
+            LOAD_VOTES_TASK_ACTIVE_KEY,
+            PAY_REWARDS_FIX_DB_ACTIVE_KEY,
+            PAY_REWARDS_TASK_ACTIVE_KEY,
+            task_check_payout_completeness,
+        )
+
+        def fake_cache_get(key, default=False):
+            if key == LOAD_VOTES_TASK_ACTIVE_KEY:
+                return True
+            if key == LOAD_TRUSTORS_TASK_ACTIVE_KEY:
+                return True
+            if key == PAY_REWARDS_FIX_DB_ACTIVE_KEY:
+                return False
+            if key == PAY_REWARDS_TASK_ACTIVE_KEY:
+                return False
+            return default
+
+        with mock.patch(
+            "aquarius_bribes.rewards.tasks.cache.get", side_effect=fake_cache_get
+        ):
+            with mock.patch.object(
+                task_check_payout_completeness,
+                "retry",
+                side_effect=AssertionError("retry should not be called"),
+            ):
+                with mock.patch(
+                    "aquarius_bribes.rewards.management.commands.check_payout_completeness.run_completeness_check",
+                    return_value={"results": [], "has_critical": False, "has_warning": False},
+                ) as mock_run:
+                    task_check_payout_completeness.run()
+
+        mock_run.assert_called_once()
 
     def test_pay_reward_build_failure_exits_without_infinite_loop(self):
         # Within a single pay_reward run, a persistent build_failure must not
@@ -2196,6 +4164,247 @@ class RewardPayerResilienceTests(TestCase):
         )
         self.assertNotIn(vote, list(remaining))
 
+    def test_reconcile_pagination_exits_before_exhausting_history(self):
+        # Performance regression guard: desc-order walk must early-exit once the
+        # page crosses below from_date, without fetching further pages.
+        from aquarius_bribes.rewards.reconcile import _iter_payment_ops
+
+        from_d = datetime(2026, 4, 8).date()
+        to_d = datetime(2026, 4, 8).date()
+        wallet = Keypair.random().public_key
+
+        future_record = self._chain_record(
+            bribe_wallet=wallet,
+            to=Keypair.random().public_key,
+            asset_code="XLM",
+            asset_issuer="",
+            amount="1.0000000",
+            tx_hash="future_tx",
+            memo="Bribe: ignored",
+            created_at_str="2026-04-09T00:00:00Z",
+            paging_token="tok_future",
+        )
+        in_window_record = self._chain_record(
+            bribe_wallet=wallet,
+            to=Keypair.random().public_key,
+            asset_code="XLM",
+            asset_issuer="",
+            amount="1.0000000",
+            tx_hash="window_tx",
+            memo="Bribe: window",
+            created_at_str="2026-04-08T12:00:00Z",
+            paging_token="tok_window",
+        )
+        ancient_record = self._chain_record(
+            bribe_wallet=wallet,
+            to=Keypair.random().public_key,
+            asset_code="XLM",
+            asset_issuer="",
+            amount="1.0000000",
+            tx_hash="ancient_tx",
+            memo="Bribe: ancient",
+            created_at_str="2026-04-07T00:00:00Z",
+            paging_token="tok_ancient",
+        )
+
+        server, builder = self._mock_reconcile_server(
+            [future_record],
+            [in_window_record],
+            [ancient_record],
+            [
+                self._chain_record(
+                    bribe_wallet=wallet,
+                    to=Keypair.random().public_key,
+                    asset_code="XLM",
+                    asset_issuer="",
+                    amount="1.0000000",
+                    tx_hash="should_not_fetch",
+                    memo="Bribe: unreachable",
+                    created_at_str="2022-01-01T00:00:00Z",
+                    paging_token="tok_unreachable",
+                )
+            ],
+        )
+
+        yielded = list(_iter_payment_ops(server, wallet, from_d, to_d))
+
+        self.assertEqual(len(yielded), 1)
+        self.assertEqual(yielded[0][0]["transaction_hash"], "window_tx")
+        # Newest-first walk: order must be called with desc=True.
+        builder.order.assert_called_with(desc=True)
+        # Must stop after 3 pages (future skipped, window yielded, ancient triggers return).
+        self.assertEqual(builder.call.call_count, 3)
+
+    def test_fix_db_aborts_when_lock_lost_mid_run(self):
+        # X1: if the cache lock is lost mid-run (TTL expiry or takeover by
+        # another operator), apply_fix_db must raise FixDbLockLost so the
+        # CLI can surface it as a CommandError and stop further mutations.
+        from django.core.cache import cache
+        from aquarius_bribes.rewards.reconcile import FixDbLockLost, apply_fix_db
+        from aquarius_bribes.rewards.tasks import PAY_REWARDS_FIX_DB_ACTIVE_KEY
+
+        snapshot_date = timezone.now().date() - timedelta(days=1)
+        market = self._make_market()
+        bribe = self._make_bribe(market, asset_code=Asset.native().code, asset_issuer="")
+        # Build 120 chain_only items so the touch fires at rows 50 AND 100 —
+        # we need at least two touch boundaries for patched_get to return
+        # owner_token first (row 50) and other_token second (row 100).
+        chain_only_items = []
+        for _ in range(120):
+            vote = self._make_vote(market, Keypair.random().public_key, snapshot_date, "100")
+            chain_only_items.append((
+                "tx-{}".format(vote.id),
+                vote.voting_account,
+                Asset.native().code,
+                "",
+                Decimal("1.0000000"),
+                bribe.id,
+                vote.id,
+                "Bribe: X/Y",
+                self._at(snapshot_date, 12),
+                None,
+            ))
+
+        report = self._make_report(snapshot_date, chain_only=chain_only_items)
+        owner_token = "real-owner"
+        other_token = "other-operator"
+        call_count = [0]
+
+        original_get = cache.get
+
+        def patched_get(key, *args, **kwargs):
+            if key == PAY_REWARDS_FIX_DB_ACTIVE_KEY:
+                call_count[0] += 1
+                # First call returns real owner; second returns different token
+                # to simulate lock takeover.
+                if call_count[0] == 1:
+                    return owner_token
+                return other_token
+            return original_get(key, *args, **kwargs)
+
+        with mock.patch("aquarius_bribes.rewards.reconcile.cache.get", side_effect=patched_get):
+            with mock.patch("aquarius_bribes.rewards.reconcile.cache.touch"):
+                with self.assertRaises(FixDbLockLost):
+                    apply_fix_db(
+                        report,
+                        now=timezone.now(),
+                        cache_lock_key=PAY_REWARDS_FIX_DB_ACTIVE_KEY,
+                        owner_token=owner_token,
+                        touch_every=50,
+                    )
+
+    def test_fix_db_aborts_surfaces_as_command_error(self):
+        # Verify FixDbLockLost from apply_fix_db is caught by the CLI and
+        # re-raised as CommandError.
+        from aquarius_bribes.rewards.reconcile import FixDbLockLost
+
+        snapshot_date = timezone.now().date() - timedelta(days=1)
+        report = self._make_report(snapshot_date)
+
+        with mock.patch(
+            "aquarius_bribes.rewards.management.commands.reconcile_bribe_payouts.reconcile_bribe_payouts",
+            return_value=report,
+        ):
+            with mock.patch(
+                "aquarius_bribes.rewards.management.commands.reconcile_bribe_payouts.apply_fix_db",
+                side_effect=FixDbLockLost("lock gone"),
+            ):
+                with mock.patch("builtins.input", return_value="y"):
+                    with override_settings(BRIBE_WALLET_ADDRESS=Keypair.random().public_key):
+                        with self.assertRaises(CommandError):
+                            call_command(
+                                "reconcile_bribe_payouts",
+                                "--fix-db",
+                                "--from={}".format(snapshot_date),
+                                "--to={}".format(snapshot_date),
+                            )
+
+    def test_fix_db_touches_lock_every_n_rows(self):
+        # X1: cache.touch must be called at least once every touch_every rows.
+        from aquarius_bribes.rewards.reconcile import apply_fix_db
+        from aquarius_bribes.rewards.tasks import PAY_REWARDS_FIX_DB_ACTIVE_KEY
+
+        snapshot_date = timezone.now().date() - timedelta(days=1)
+        market = self._make_market()
+        bribe = self._make_bribe(market, asset_code=Asset.native().code, asset_issuer="")
+        chain_only_items = []
+        for _ in range(150):
+            vote = self._make_vote(market, Keypair.random().public_key, snapshot_date, "100")
+            chain_only_items.append((
+                "tx-{}".format(vote.id),
+                vote.voting_account,
+                Asset.native().code,
+                "",
+                Decimal("1.0000000"),
+                bribe.id,
+                vote.id,
+                "Bribe: X/Y",
+                self._at(snapshot_date, 12),
+                None,
+            ))
+
+        owner_token = "my-token"
+        report = self._make_report(snapshot_date, chain_only=chain_only_items)
+
+        with mock.patch("aquarius_bribes.rewards.reconcile.cache.touch") as mock_touch:
+            with mock.patch(
+                "aquarius_bribes.rewards.reconcile.cache.get", return_value=owner_token
+            ):
+                apply_fix_db(
+                    report,
+                    now=timezone.now(),
+                    cache_lock_key=PAY_REWARDS_FIX_DB_ACTIVE_KEY,
+                    owner_token=owner_token,
+                    touch_every=50,
+                )
+
+        # 150 rows / 50 = 3 touches expected.
+        self.assertGreaterEqual(mock_touch.call_count, 3)
+        # Each touch must use the correct key and TTL.
+        for call in mock_touch.call_args_list:
+            self.assertEqual(call.args[0], PAY_REWARDS_FIX_DB_ACTIVE_KEY)
+
+    def test_missed_walk_uses_single_query_per_bribe_per_day(self):
+        # X3: the MISSED walk must issue exactly one Payout lookup per
+        # (bribe, day) rather than one per vote. Use assertNumQueries to
+        # verify the count stays constant as vote count grows.
+        from django.test.utils import CaptureQueriesContext
+        from django.db import connection
+
+        snapshot_date = timezone.now().date()
+        wallet = Keypair.random().public_key
+        market = self._make_market()
+        self._make_bribe(
+            market,
+            asset_code=Asset.native().code,
+            asset_issuer="",
+        )
+        # Create 10 votes — without the hoist this would cause 10 per-vote
+        # Payout queries; with the hoist it is exactly 1 per bribe per day.
+        for _ in range(10):
+            self._make_vote(market, Keypair.random().public_key, snapshot_date, "100")
+
+        server, _ = self._mock_reconcile_server([], [])
+
+        with CaptureQueriesContext(connection) as ctx:
+            report = self._reconcile(snapshot_date, snapshot_date, wallet, server=server)
+
+        # The MISSED-walk hoisted query is uniquely identified by filtering
+        # on bribe_id = X and snapshot_time = D (scalar equality). The other
+        # Payout queries in reconcile_bribe_payouts use snapshot_time BETWEEN
+        # and carry no bribe_id predicate, so excluding BETWEEN narrows the
+        # match to exactly the query we care about.
+        missed_walk_queries = [
+            q for q in ctx.captured_queries
+            if "rewards_payout" in q["sql"].lower()
+            and "bribe_id" in q["sql"].lower()
+            and "snapshot_time" in q["sql"].lower()
+            and "between" not in q["sql"].lower()
+        ]
+        # Should be exactly 1 (hoisted per-bribe-per-day query), not 10.
+        self.assertEqual(len(missed_walk_queries), 1)
+        self.assertEqual(len(report.missed), 10)
+
     def test_task_pay_rewards_reuses_asset_holder_cache(self):
         # X4: get_payable_votes must be called with the same asset_holder_cache
         # dict across bribes — verifiable by checking the cache grows across calls
@@ -2240,6 +4449,125 @@ class RewardPayerResilienceTests(TestCase):
         first_cache = calls[0]
         for c in calls[1:]:
             self.assertIs(c, first_cache)
+
+    def test_chain_only_weekly_rollover_not_ambiguous(self):
+        # X5: two back-to-back weekly bribes with the same (asset, market_key).
+        # A chain op on Monday 00:01 for week-N snapshot must resolve to bribe N,
+        # NOT be flagged AMBIGUOUS because bribe N+1 also matches a naive ±1 day
+        # candidate window.
+        # Week N: ends Monday 00:00; Week N+1: starts Monday 00:00.
+        monday = timezone.now().date() - timedelta(days=7)
+        # Adjust to the most recent Monday
+        monday = monday - timedelta(days=monday.weekday())
+        snapshot_date = monday - timedelta(days=1)  # Sunday = last day of week N
+        wallet = Keypair.random().public_key
+        market = self._make_market(
+            asset1="AQUA:{}".format(Keypair.random().public_key),
+            asset2="native",
+        )
+        monday_aware = timezone.make_aware(datetime.combine(monday, time(0, 0, 0)))
+        # Bribe N: active until Monday 00:00
+        bribe_n = AggregatedByAssetBribe.objects.create(
+            market_key=market,
+            asset_code=Asset.native().code,
+            asset_issuer="",
+            start_at=monday_aware - timedelta(days=7),
+            stop_at=monday_aware,
+            total_reward_amount=Decimal("700"),
+        )
+        # Bribe N+1: starts Monday 00:00
+        AggregatedByAssetBribe.objects.create(
+            market_key=market,
+            asset_code=Asset.native().code,
+            asset_issuer="",
+            start_at=monday_aware,
+            stop_at=monday_aware + timedelta(days=7),
+            total_reward_amount=Decimal("700"),
+        )
+        vote = self._make_vote(market, Keypair.random().public_key, snapshot_date, "100")
+        # Chain op at Monday 00:01 — crosses into Monday but vote was Sunday.
+        created_at = timezone.make_aware(datetime.combine(monday, time(0, 1, 0)))
+        server, _ = self._mock_reconcile_server(
+            [
+                self._chain_record(
+                    wallet,
+                    vote.voting_account,
+                    Asset.native().code,
+                    "",
+                    Decimal("10.0000000"),
+                    "tx-rollover",
+                    "Bribe: {}".format(market.short_value),
+                    created_at.isoformat(),
+                ),
+            ],
+            [],
+        )
+
+        # Reconcile with window covering snapshot_date (Sunday).
+        report = self._reconcile(snapshot_date, snapshot_date, wallet, server=server)
+
+        # Must not be AMBIGUOUS — VoteSnapshot-first resolution picks bribe N.
+        self.assertEqual(len(report.ambiguous), 0)
+        # Should land in chain_only (no Payout yet) resolved to bribe N,
+        # or skipped_no_active_bribe if the VoteSnapshot resolves cleanly.
+        # The key assertion is: no ambiguity.
+        chain_only_bribe_ids = {row[5] for row in report.chain_only if row[6] is not None}
+        self.assertNotIn(None, chain_only_bribe_ids)
+        if chain_only_bribe_ids:
+            self.assertIn(bribe_n.id, chain_only_bribe_ids)
+
+    def test_chain_only_resolves_via_vote_snapshot_date(self):
+        # X5: two bribes with overlapping asset+market_key but different active
+        # windows. A chain op inside only bribe A's window must resolve to A,
+        # not B, after VoteSnapshot-first resolution.
+        snapshot_date = timezone.now().date() - timedelta(days=3)
+        wallet = Keypair.random().public_key
+        market = self._make_market(
+            asset1="AQUA:{}".format(Keypair.random().public_key),
+            asset2="native",
+        )
+        # Bribe A: active around snapshot_date
+        bribe_a = AggregatedByAssetBribe.objects.create(
+            market_key=market,
+            asset_code=Asset.native().code,
+            asset_issuer="",
+            start_at=self._at(snapshot_date, 0) - timedelta(days=1),
+            stop_at=self._at(snapshot_date, 0) + timedelta(days=2),
+            total_reward_amount=Decimal("700"),
+        )
+        # Bribe B: starts after snapshot_date — should NOT match a vote on snapshot_date.
+        AggregatedByAssetBribe.objects.create(
+            market_key=market,
+            asset_code=Asset.native().code,
+            asset_issuer="",
+            start_at=self._at(snapshot_date, 0) + timedelta(days=3),
+            stop_at=self._at(snapshot_date, 0) + timedelta(days=10),
+            total_reward_amount=Decimal("700"),
+        )
+        vote = self._make_vote(market, Keypair.random().public_key, snapshot_date, "100")
+        created_at = self._at(snapshot_date, 12)
+        server, _ = self._mock_reconcile_server(
+            [
+                self._chain_record(
+                    wallet,
+                    vote.voting_account,
+                    Asset.native().code,
+                    "",
+                    Decimal("10.0000000"),
+                    "tx-a-only",
+                    "Bribe: {}".format(market.short_value),
+                    created_at.isoformat(),
+                ),
+            ],
+            [],
+        )
+
+        report = self._reconcile(snapshot_date, snapshot_date, wallet, server=server)
+
+        self.assertEqual(len(report.ambiguous), 0)
+        chain_only_with_vs = [row for row in report.chain_only if row[6] is not None]
+        self.assertEqual(len(chain_only_with_vs), 1)
+        self.assertEqual(chain_only_with_vs[0][5], bribe_a.id)
 
     def test_unknown_response_failed_payouts_remain_retryable(self):
         # X6: a failed Payout with message='unknown_response_no_successful_field'
@@ -2349,6 +4677,114 @@ class RewardPayerResilienceTests(TestCase):
         payout.refresh_from_db()
         self.assertEqual(payout.status, Payout.STATUS_FAILED)
         self.assertEqual(payout.message, "timeout")
+
+    def test_chain_only_multi_day_range_resolves_to_chain_date_snapshot(self):
+        # X2 (2026-04-24 audit) + X5 iter-3 refinement: a voter with
+        # VoteSnapshots on both D-1 and D inside a multi-day reconcile range
+        # must not be routed to AMBIGUOUS when memo+asset+short_value+amount
+        # uniquely identifies the (bribe, VS) pair. The resolver does amount-
+        # replay per-date: the chain op amount matches exactly one date's
+        # expected, so that date's VS is returned.
+        wallet = Keypair.random().public_key
+        today = timezone.now().date()
+        d_prev = today - timedelta(days=3)
+        d_chain = today - timedelta(days=2)
+        market = self._make_market()
+        bribe = self._make_bribe(
+            market,
+            asset_code=Asset.native().code,
+            asset_issuer="",
+            start=self._at(d_prev, 0),
+            stop=self._at(d_chain, 0) + timedelta(days=1),
+        )
+        voter = Keypair.random().public_key
+        # Different total_votes on each day so the per-day expected amounts
+        # differ — otherwise a single-voter-on-both-days setup produces
+        # identical expected amounts and the amount-match can't pick one.
+        self._make_vote(market, voter, d_prev, "100")
+        self._make_vote(market, Keypair.random().public_key, d_prev, "300")
+        vote_chain = self._make_vote(market, voter, d_chain, "100")
+
+        created_at = self._at(d_chain, 12)
+        # Amount matches vote_chain on d_chain exclusively: d_chain has only
+        # this voter so expected = daily * 100/100 = daily; d_prev has total
+        # 400 so expected for vote_prev = daily * 100/400 = daily/4.
+        expected_amount = Decimal(bribe.daily_amount).quantize(
+            Decimal("0.0000001"), rounding=ROUND_DOWN,
+        )
+        server, _ = self._mock_reconcile_server(
+            [
+                self._chain_record(
+                    wallet,
+                    voter,
+                    Asset.native().code,
+                    "",
+                    expected_amount,
+                    "tx-mday",
+                    "Bribe: {}".format(market.short_value),
+                    created_at.isoformat(),
+                ),
+            ],
+            [],
+        )
+
+        report = self._reconcile(d_prev, d_chain, wallet, server=server)
+
+        self.assertEqual(len(report.ambiguous), 0)
+        chain_only_with_vs = [row for row in report.chain_only if row[6] is not None]
+        self.assertEqual(len(chain_only_with_vs), 1)
+        self.assertEqual(chain_only_with_vs[0][5], bribe.id)
+        self.assertEqual(chain_only_with_vs[0][6], vote_chain.id)
+
+    def test_chain_only_multi_day_range_midnight_cross_falls_back_to_prior_day(self):
+        # X2 (2026-04-24 audit): if the voter has no VS on `chain_date`
+        # (midnight-cross: tx submitted for snapshot_time=D-1 but landed on
+        # D 00:0x), the resolver must still succeed by falling back to the
+        # only remaining candidate date (D-1).
+        wallet = Keypair.random().public_key
+        today = timezone.now().date()
+        d_prev = today - timedelta(days=3)
+        d_chain = today - timedelta(days=2)
+        market = self._make_market()
+        bribe = self._make_bribe(
+            market,
+            asset_code=Asset.native().code,
+            asset_issuer="",
+            start=self._at(d_prev, 0),
+            stop=self._at(d_chain, 0),  # active only on D-1
+        )
+        voter = Keypair.random().public_key
+        vote_prev = self._make_vote(market, voter, d_prev, "100")
+
+        created_at = self._at(d_chain, 0) + timedelta(minutes=1)
+        expected_amount = (
+            Decimal(bribe.daily_amount)
+            * Decimal(vote_prev.votes_value)
+            / Decimal(vote_prev.votes_value)
+        ).quantize(Decimal("0.0000001"), rounding=ROUND_DOWN)
+        server, _ = self._mock_reconcile_server(
+            [
+                self._chain_record(
+                    wallet,
+                    voter,
+                    Asset.native().code,
+                    "",
+                    expected_amount,
+                    "tx-midcross",
+                    "Bribe: {}".format(market.short_value),
+                    created_at.isoformat(),
+                ),
+            ],
+            [],
+        )
+
+        report = self._reconcile(d_prev, d_chain, wallet, server=server)
+
+        self.assertEqual(len(report.ambiguous), 0)
+        chain_only_with_vs = [row for row in report.chain_only if row[6] is not None]
+        self.assertEqual(len(chain_only_with_vs), 1)
+        self.assertEqual(chain_only_with_vs[0][5], bribe.id)
+        self.assertEqual(chain_only_with_vs[0][6], vote_prev.id)
 
     def test_process_page_connection_error_persists_retryable_timeout(self):
         # X3 (2026-04-24 audit): `stellar_sdk.exceptions.ConnectionError` is
@@ -2600,6 +5036,66 @@ class RewardPayerResilienceTests(TestCase):
         self.assertEqual(Payout.objects.filter(bribe=bribe).count(), 1)
         self.assertTrue(Payout.objects.filter(pk=persisted.pk).exists())
 
+    def test_chain_only_weekly_rollover_midnight_cross_returns_ambiguous(self):
+        # X5 (2026-04-24 audit): two consecutive weekly bribes on the same
+        # market_key with bribe_A stopping exactly at D 00:00 UTC and bribe_B
+        # starting at D 00:00 UTC. A tx submitted for snapshot_time=D-1 that
+        # lands on-chain at D 00:05 must NOT be silently attributed to
+        # bribe_B / VS_D when the voter also has VS_D. Route to AMBIGUOUS so
+        # operator can disambiguate (safer than pre-fix behaviour in terms
+        # of recovery, since pre-fix also returned AMBIGUOUS here).
+        wallet = Keypair.random().public_key
+        today = timezone.now().date()
+        d_prev = today - timedelta(days=3)
+        d_chain = today - timedelta(days=2)
+        market = self._make_market()
+        bribe_a = AggregatedByAssetBribe.objects.create(
+            market_key=market,
+            asset_code=Asset.native().code,
+            asset_issuer="",
+            start_at=self._at(d_prev, 0),
+            stop_at=self._at(d_chain, 0),  # stops exactly at d_chain 00:00 UTC
+            total_reward_amount=Decimal("700"),
+        )
+        AggregatedByAssetBribe.objects.create(
+            market_key=market,
+            asset_code=Asset.native().code,
+            asset_issuer="",
+            start_at=self._at(d_chain, 0),  # starts exactly at d_chain 00:00 UTC
+            stop_at=self._at(d_chain, 0) + timedelta(days=7),
+            total_reward_amount=Decimal("700"),
+        )
+        voter = Keypair.random().public_key
+        self._make_vote(market, voter, d_prev, "100")
+        self._make_vote(market, voter, d_chain, "100")
+
+        # Chain op lands at d_chain 00:05 UTC — a midnight-cross of
+        # bribe_a's last submission.
+        created_at = self._at(d_chain, 0) + timedelta(minutes=5)
+        server, _ = self._mock_reconcile_server(
+            [
+                self._chain_record(
+                    wallet,
+                    voter,
+                    Asset.native().code,
+                    "",
+                    Decimal(bribe_a.daily_amount).quantize(
+                        Decimal("0.0000001"), rounding=ROUND_DOWN,
+                    ),
+                    "tx-rollover",
+                    "Bribe: {}".format(market.short_value),
+                    created_at.isoformat(),
+                ),
+            ],
+            [],
+        )
+
+        report = self._reconcile(d_prev, d_chain, wallet, server=server)
+
+        # Must land in ambiguous, not silently attributed to bribe_b/VS_{d_chain}.
+        self.assertEqual(len(report.ambiguous), 1)
+        self.assertEqual(len(report.chain_only), 0)
+
     def test_clean_failed_payouts_skips_already_success_timeout_row(self):
         # X4 iter-3 (2026-04-24 audit): a previous run upgraded a FAILED +
         # message='timeout' row to SUCCESS but left the message intact. A
@@ -2702,3 +5198,61 @@ class RewardPayerResilienceTests(TestCase):
         self.assertEqual(payout.status, Payout.STATUS_SUCCESS)
         self.assertEqual(payout.message, "reverified_after_timeout")
 
+    def test_chain_only_same_bribe_two_dates_resolves_via_amount(self):
+        # X5 iter-3 (2026-04-24 audit): a recurring voter on a single multi-
+        # day bribe has VSs on both D-1 and D. Per-date candidate resolution
+        # must do amount-match across dates and return the concrete
+        # (bribe, VS) when amount uniquely identifies one, _AMBIGUOUS
+        # otherwise. Same-day preference alone would silently misattribute
+        # a midnight-cross tx for VS_{D-1} landing on D to VS_D.
+        wallet = Keypair.random().public_key
+        today = timezone.now().date()
+        d_prev = today - timedelta(days=3)
+        d_chain = today - timedelta(days=2)
+        market = self._make_market()
+        bribe = self._make_bribe(
+            market,
+            asset_code=Asset.native().code,
+            asset_issuer="",
+            start=self._at(d_prev, 0),
+            stop=self._at(d_chain, 0) + timedelta(days=1),
+        )
+        voter = Keypair.random().public_key
+        vote_prev = self._make_vote(market, voter, d_prev, "100")
+        # Total on D-1: voter=100, other=100 → 200 → expected for voter
+        # = daily * 100/200 = daily/2. On D voter is alone so total=100
+        # → expected = daily. Chain op amount = daily/2 uniquely matches
+        # VS_{d_prev} (midnight-cross shape).
+        self._make_vote(market, Keypair.random().public_key, d_prev, "100")
+        self._make_vote(market, voter, d_chain, "100")
+
+        created_at = self._at(d_chain, 0) + timedelta(minutes=5)
+        expected_amount = (
+            Decimal(bribe.daily_amount)
+            * Decimal(vote_prev.votes_value)
+            / Decimal("200")
+        ).quantize(Decimal("0.0000001"), rounding=ROUND_DOWN)
+        server, _ = self._mock_reconcile_server(
+            [
+                self._chain_record(
+                    wallet,
+                    voter,
+                    Asset.native().code,
+                    "",
+                    expected_amount,
+                    "tx-amount-match",
+                    "Bribe: {}".format(market.short_value),
+                    created_at.isoformat(),
+                ),
+            ],
+            [],
+        )
+
+        report = self._reconcile(d_prev, d_chain, wallet, server=server)
+
+        self.assertEqual(len(report.ambiguous), 0)
+        chain_only_with_vs = [row for row in report.chain_only if row[6] is not None]
+        self.assertEqual(len(chain_only_with_vs), 1)
+        # Must resolve to VS_{d_prev}, not VS_{d_chain}, via amount-match.
+        self.assertEqual(chain_only_with_vs[0][5], bribe.id)
+        self.assertEqual(chain_only_with_vs[0][6], vote_prev.id)

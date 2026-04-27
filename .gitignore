@@ -78,3 +78,5 @@ celerybeat-schedule
 # Env config file
 env.config
 .env
+test_env
+config/settings/prevalidation.py

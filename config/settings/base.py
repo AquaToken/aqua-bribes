@@ -156,6 +156,8 @@ MEDIA_ROOT = root('media')
 
 
 CELERY_ENABLED = env.bool('CELERY_ENABLED', default=True)
+PAYOUT_COMPLETENESS_THRESHOLD_PCT = env.int('PAYOUT_COMPLETENESS_THRESHOLD_PCT', default=5)
+PAYOUT_COMPLETENESS_ALERT_ENABLED = env.bool('PAYOUT_COMPLETENESS_ALERT_ENABLED', default=True)
 if CELERY_ENABLED:
     # Celery configuration
     # --------------------------------------------------------------------------
