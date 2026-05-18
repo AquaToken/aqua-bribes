@@ -178,7 +178,9 @@ if SENTRY_ENABLED:
 # Horizon configuration
 # --------------------------------------------------------------------------
 
-STELLAR_PASSPHRASE = 'Public Global Stellar Network ; September 2015'
+# Env-driven so a non-mainnet deployment (e.g. testnet) can override it.
+# Defaults to the mainnet passphrase — prod behaviour is unchanged.
+STELLAR_PASSPHRASE = env('STELLAR_PASSPHRASE', default='Public Global Stellar Network ; September 2015')
 HORIZON_URL = env('HORIZON_URL', default='https://horizon.stellar.org')
 SOROBAN_RPC_URL = env('SOROBAN_RPC_URL', default='https://mainnet.sorobanrpc.com')
 
@@ -201,3 +203,9 @@ DELEGATABLE_ASSETS = [
 ]
 
 AMM_PROTOCOL_BRIBES_ADMIN_ADDRESS = env('AMM_PROTOCOL_BRIBES_ADMIN_ADDRESS')
+
+# Upstream services aqua-bribes consumes. Env-driven so a non-mainnet
+# deployment can point them at testnet hosts; defaults are the mainnet hosts,
+# so prod behaviour is unchanged.
+VOTING_TRACKER_URL = env('VOTING_TRACKER_URL', default='https://voting-tracker.aqua.network')
+MARKETKEYS_TRACKER_URL = env('MARKETKEYS_TRACKER_URL', default='https://marketkeys-tracker.aqua.network')

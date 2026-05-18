@@ -181,8 +181,8 @@ class BribesTests(TestCase):
         loader.load_votes()
 
         response = requests.get(
-            'https://voting-tracker.aqua.network/api/market-keys/{}/votes/?timestamp={}'.format(
-                market_key, snapshot_time.strftime("%s"),
+            '{}/api/market-keys/{}/votes/?timestamp={}'.format(
+                settings.VOTING_TRACKER_URL.rstrip('/'), market_key, snapshot_time.strftime("%s"),
             )
         )
 

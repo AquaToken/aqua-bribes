@@ -234,3 +234,7 @@ REWARD_SERVER_AUTHORIZATION_TOKEN = NotImplemented
 DELEGATE_MARKER = NotImplemented
 DELEGATABLE_ASSETS = NotImplemented
 
+# Upstream services aqua-bribes consumes (overridden per environment).
+VOTING_TRACKER_URL = NotImplemented
+MARKETKEYS_TRACKER_URL = NotImplemented
+

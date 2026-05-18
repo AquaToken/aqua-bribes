@@ -13,10 +13,10 @@ from aquarius_bribes.utils.assets import get_asset_string, parse_asset_string
 
 
 class VotesLoader(object):
-    def __init__(self, market_key, snapshot_time, base_url='https://voting-tracker.aqua.network'):
+    def __init__(self, market_key, snapshot_time, base_url=None):
         self.market_key = market_key
         self.snapshot_time = snapshot_time
-        self.base_url = base_url
+        self.base_url = base_url or settings.VOTING_TRACKER_URL
 
     def _get_page(self, page, page_limit: int = 200):
         response = requests.get(
