@@ -186,6 +186,14 @@ class AssetHolderBalanceSnapshot(models.Model):
 
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
 
+    class Meta:
+        indexes = [
+            models.Index(
+                fields=['asset_code', 'asset_issuer', 'created_at'],
+                name='ahbs_asset_date_idx',
+            ),
+        ]
+
     def __str__(self):
         return '{0}..{1} at {2}: {3} {4}'.format(
             self.account[:8], self.account[-8:], self.created_at.date(), self.balance, self.asset.code,
