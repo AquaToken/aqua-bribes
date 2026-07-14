@@ -1,4 +1,4 @@
-FROM python:3.8-buster
+FROM python:3.11-bookworm
 
 # Install dependencies
 RUN apt-get update
@@ -13,13 +13,10 @@ RUN apt-get install -y --no-install-recommends \
     git-core
 RUN apt-get install -y --no-install-recommends \
     postgresql-client \
-    libpq-dev \
-    python-psycopg2
+    libpq-dev
 RUN apt-get install -y --no-install-recommends \
-    python-gdal \
     gdal-bin \
     libgdal-dev \
-    libgdal20 \
     libxml2-dev \
     libxslt-dev \
     xmlsec1
@@ -41,7 +38,7 @@ ADD Pipfile.lock /code/Pipfile.lock
 WORKDIR /code/
 
  # todo: try to figure out how we can test using dev packages and exclude them from prod build at the same time...
-RUN pipenv install --ignore-pipfile --dev
+RUN pipenv install --ignore-pipfile --dev --system
 
 ADD . /code/
 # cleanup env files if any
