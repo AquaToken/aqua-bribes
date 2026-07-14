@@ -32,7 +32,9 @@ def load_market_key_details():
         bribes__status__in=[Bribe.STATUS_PENDING, Bribe.STATUS_ACTIVE],
     ):
         try:
-            url = "https://marketkeys-tracker.aqua.network/api/market-keys/?account_id={}".format(market_key.market_key)
+            url = "{}/api/market-keys/?account_id={}".format(
+                settings.MARKETKEYS_TRACKER_URL.rstrip('/'), market_key.market_key,
+            )
             response = requests.get(url)
             key_info = response.json()['results'][0]
 

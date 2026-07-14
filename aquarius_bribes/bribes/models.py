@@ -15,10 +15,18 @@ class MarketKey(models.Model):
     def __str__(self):
         return self.market_key
 
+    @staticmethod
+    def _is_contract(raw_asset):
+        # Soroban (non-SAC) tokens come from marketkeys-tracker as a bare contract id
+        return raw_asset.startswith('C') and ':' not in raw_asset and len(raw_asset) == 56
+
     def get_asset_object(self, raw_asset):
         if raw_asset:
             if raw_asset == 'native':
                 return Asset.native()
+            if self._is_contract(raw_asset):
+                # Soroban tokens have no classic Asset representation
+                return None
             code, issuer = raw_asset.split(':')
             return Asset(code=code, issuer=issuer)
 
@@ -32,10 +40,16 @@ class MarketKey(models.Model):
         if self.raw_asset2:
             return self.get_asset_object(self.raw_asset2)
 
+    def _asset_label(self, raw_asset):
+        if self._is_contract(raw_asset):
+            return raw_asset[:4]
+
+        return self.get_asset_object(raw_asset).code[:4]
+
     @property
     def short_value(self):
-        if self.asset1 and self.asset2:
-            return '{}/{}'.format(self.asset1.code[:4], self.asset2.code[:4])
+        if self.raw_asset1 and self.raw_asset2:
+            return '{}/{}'.format(self._asset_label(self.raw_asset1), self._asset_label(self.raw_asset2))
         return '{}...{}'.format(self.market_key[:4], self.market_key[-4:])
 
 
