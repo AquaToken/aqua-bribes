@@ -39,6 +39,11 @@ class MarketKey(models.Model):
         return '{}...{}'.format(self.market_key[:4], self.market_key[-4:])
 
 
+class BribeIngestionCursor(models.Model):
+    account = models.CharField(max_length=56, primary_key=True)
+    paging_token = models.CharField(max_length=255, blank=True, default='')
+
+
 class Bribe(models.Model):
     DEFAULT_DURATION = timedelta(days=7)
 
