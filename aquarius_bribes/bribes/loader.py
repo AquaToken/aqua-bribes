@@ -63,22 +63,18 @@ class BribesLoader(object):
         # but claimable balance reserve is sponsored by the aquarius protocol fees admin, so compare to it
         return sponsor == settings.AMM_PROTOCOL_BRIBES_ADMIN_ADDRESS
 
-    def parse(self, bribe):
-        claimants = bribe['claimants']
-        if len(claimants) != 2:
-            return None
+    def _parse_transport_metadata(self, bribe):
+        claimants = bribe.get('claimants')
+        if not isinstance(claimants, list):
+            raise ValueError('Invalid claimable balance claimants')
 
-        amount = bribe['amount']
-        sponsor = bribe['sponsor']
-        claimable_balance_id = bribe['id']
-        paging_token = bribe['paging_token']
+        claimable_balance_id = bribe.get('id')
+        if not isinstance(claimable_balance_id, str) or not claimable_balance_id:
+            raise ValueError('Invalid claimable balance id')
 
-        asset = bribe['asset']
-        if asset == 'native':
-            asset = Asset.native()
-        else:
-            asset = asset.split(':')
-            asset = Asset(code=asset[0], issuer=asset[1])
+        paging_token = bribe.get('paging_token')
+        if not isinstance(paging_token, str) or not paging_token:
+            raise ValueError('Invalid claimable balance paging_token')
 
         balance_created_at = bribe.get('last_modified_time')
         if not isinstance(balance_created_at, str) or not balance_created_at:
@@ -87,6 +83,25 @@ class BribesLoader(object):
             balance_created_at = date_parse(balance_created_at)
         except (OverflowError, TypeError, ValueError) as exc:
             raise ValueError('Invalid claimable balance last_modified_time') from exc
+
+        return claimants, claimable_balance_id, paging_token, balance_created_at
+
+    def parse(self, bribe):
+        claimants, claimable_balance_id, paging_token, balance_created_at = (
+            self._parse_transport_metadata(bribe)
+        )
+        if len(claimants) != 2:
+            return None
+
+        amount = bribe['amount']
+        sponsor = bribe['sponsor']
+
+        asset = bribe['asset']
+        if asset == 'native':
+            asset = Asset.native()
+        else:
+            asset = asset.split(':')
+            asset = Asset(code=asset[0], issuer=asset[1])
 
         bribe_collector_claim, market_key_claim = sorted(
             claimants, key=lambda cl: cl['destination'] == self.account, reverse=True,
@@ -185,7 +200,7 @@ class BribesLoader(object):
                     parsed_bribes.append(bribe_instance)
                 else:
                     skipped_bribes.append(
-                        (bribe.get('id', '<unknown>'), len(bribe['claimants'])),
+                        (bribe['id'], len(bribe['claimants'])),
                     )
 
             page_cursor = bribes[-1].get('paging_token')

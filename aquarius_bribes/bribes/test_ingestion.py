@@ -128,6 +128,42 @@ class BribesLoaderIngestionTests(TestCase):
             MarketKey.objects.all().delete()
             BribeIngestionCursor.objects.all().delete()
 
+    def test_wrong_claimant_count_does_not_hide_invalid_transport_metadata(self):
+        invalid_records = {}
+
+        missing_id = self._skippable_record('balance-missing-id', '410')
+        missing_id.pop('id')
+        invalid_records['missing id'] = missing_id
+
+        blank_id = self._skippable_record('balance-blank-id', '411')
+        blank_id['id'] = ''
+        invalid_records['blank id'] = blank_id
+
+        missing_paging_token = self._skippable_record('balance-missing-token', '412')
+        missing_paging_token.pop('paging_token')
+        invalid_records['missing paging token'] = missing_paging_token
+
+        malformed_timestamp = self._skippable_record('balance-bad-time', '413')
+        malformed_timestamp['last_modified_time'] = 'not-a-timestamp'
+        invalid_records['malformed timestamp'] = malformed_timestamp
+
+        non_list_claimants = self._record('balance-bad-claimants', '414')
+        non_list_claimants['claimants'] = {'not': 'a list'}
+        invalid_records['non-list claimants'] = non_list_claimants
+
+        for label, record in invalid_records.items():
+            with self.subTest(label=label):
+                loader = self._loader()
+                loader._get_page = MagicMock(side_effect=[[record], []])
+
+                with self.assertRaises(ValueError):
+                    loader.load_bribes()
+
+                loader.logger.warning.assert_not_called()
+                self.assertFalse(Bribe.objects.exists())
+                self.assertFalse(MarketKey.objects.exists())
+                self.assertFalse(BribeIngestionCursor.objects.exists())
+
     def test_horizon_failure_does_not_advance_existing_cursor(self):
         cursor = BribeIngestionCursor.objects.create(account=COLLECTOR, paging_token='500')  # noqa: S106
         loader = self._loader()

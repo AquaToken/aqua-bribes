@@ -55,6 +55,12 @@ retryable.
 - 2026-07-19: Selected a small durable database cursor because an expiring cache
   or the latest accepted `Bribe` cannot remember progress past an invalid page
   tail.
+- 2026-07-20: A final-cold review found that claimant-count skipping could hide
+  malformed source identity. Core classification metadata (`claimants` as a
+  list, non-empty `id` and `paging_token`, and parseable
+  `last_modified_time`) is now validated before a permanent skip. Bribe-specific
+  fields remain behind the claimant-count gate; complete Horizon schema
+  validation remains out of scope.
 
 ## Verification contract
 
@@ -68,11 +74,16 @@ final candidate, plus focused static checks and an independent final review.
 
 - Focused RED: five timestamp cases exposed the pre-transaction empty cursor
   write; the loader was changed to create the cursor only in the page commit.
-- Focused GREEN: 9 ingestion tests and 1 PostgreSQL two-connection concurrency
+- Focused GREEN: 10 ingestion tests and 1 PostgreSQL two-connection concurrency
   test pass.
 - Existing live-test isolation was reproduced as a 1/2 failure and repaired;
   the same pair then passed 2/2 with one collector wallet per test.
-- Rebuilt full Django tier: 49/49 tests passed in 551.7 seconds.
+- Rebuilt full Django tier on pre-review commit `825b5aa`: 49/49 tests passed
+  in 551.7 seconds. The repaired commit receives a fresh final gate.
 - New Python files pass flake8 and all changed Python files pass isort. The
   repository's legacy files retain pre-existing flake8 and runtime warnings;
   no new warning was introduced on changed lines.
+- Final-cold review of `825b5aa` returned one material `HOLD`: a wrong-count
+  record could still hide malformed core metadata. The focused intersection
+  regression and narrow repair are complete; final full verification and
+  informed repair validation remain pending.
