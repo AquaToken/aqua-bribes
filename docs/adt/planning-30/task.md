@@ -78,12 +78,12 @@ final candidate, plus focused static checks and an independent final review.
   test pass.
 - Existing live-test isolation was reproduced as a 1/2 failure and repaired;
   the same pair then passed 2/2 with one collector wallet per test.
-- Rebuilt full Django tier on pre-review commit `825b5aa`: 49/49 tests passed
-  in 551.7 seconds. The repaired commit receives a fresh final gate.
+- Rebuilt full Django tier on repaired commit `1f9effb`: 50/50 tests passed in
+  541.4 seconds; Django check and migration-drift check also passed.
 - New Python files pass flake8 and all changed Python files pass isort. The
   repository's legacy files retain pre-existing flake8 and runtime warnings;
   no new warning was introduced on changed lines.
 - Final-cold review of `825b5aa` returned one material `HOLD`: a wrong-count
-  record could still hide malformed core metadata. The focused intersection
-  regression and narrow repair are complete; final full verification and
-  informed repair validation remain pending.
+  record could still hide malformed core metadata. Commit `1f9effb` adds the
+  focused intersection regression and narrow repair. Informed validation of
+  the exact repair diff returned PASS; no second cold generation was started.
