@@ -13,8 +13,9 @@ from stellar_sdk.exceptions import BaseHorizonError
 from aquarius_bribes.bribes.bribe_processor import BribeProcessor
 from aquarius_bribes.bribes.exceptions import NoPathForConversionError
 from aquarius_bribes.bribes.loader import BribesLoader
-from aquarius_bribes.bribes.models import AggregatedByAssetBribe, Bribe, MarketKey
+from aquarius_bribes.bribes.models import AggregatedByAssetBribe, Bribe, MarketKey, SorobanTokenSymbol
 from aquarius_bribes.taskapp import app as celery_app
+from aquarius_bribes.utils.soroban import get_token_symbol
 
 
 logger = logging.getLogger(__name__)
@@ -24,6 +25,26 @@ logger = logging.getLogger(__name__)
 def task_load_bribes():
     loader = BribesLoader(settings.BRIBE_WALLET_ADDRESS, settings.BRIBE_WALLET_SIGNER)
     loader.load_bribes()
+
+
+def _get_contract_label(raw_asset: str) -> str:
+    """Return the token symbol for a contract asset, resolving it on-chain
+    only once per contract (afterwards it is served from the database)."""
+    if not MarketKey._is_contract(raw_asset):
+        return ''
+
+    stored = SorobanTokenSymbol.objects.filter(contract=raw_asset).first()
+    if stored is not None:
+        return stored.symbol
+
+    try:
+        symbol = get_token_symbol(raw_asset)[:64]
+    except Exception as e:
+        logger.info('Failed to resolve token symbol for {}: {}'.format(raw_asset, e))
+        return ''
+
+    SorobanTokenSymbol.objects.get_or_create(contract=raw_asset, defaults={'symbol': symbol})
+    return symbol
 
 
 @celery_app.task(ignore_result=True, soft_time_limit=60 * 30, time_limit=60 * 35)
@@ -41,7 +62,11 @@ def load_market_key_details():
             if key_info['asset1'] and key_info['asset2']:
                 market_key.raw_asset1 = key_info['asset1']
                 market_key.raw_asset2 = key_info['asset2']
-                market_key.save(update_fields=['raw_asset1', 'raw_asset2'])
+                market_key.asset1_label = _get_contract_label(key_info['asset1'])
+                market_key.asset2_label = _get_contract_label(key_info['asset2'])
+                market_key.save(
+                    update_fields=['raw_asset1', 'raw_asset2', 'asset1_label', 'asset2_label'],
+                )
         except Exception as e:
             logger.info(str(e))
 
