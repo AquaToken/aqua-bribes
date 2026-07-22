@@ -6,11 +6,28 @@ from django.db import models
 from stellar_sdk import Asset
 
 
+class SorobanTokenSymbol(models.Model):
+    """Resolved SEP-41 token symbols: each contract is queried on-chain once,
+    afterwards the symbol is always served from this table."""
+
+    contract = models.CharField(max_length=56, primary_key=True)
+    symbol = models.CharField(max_length=64)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return '{} ({})'.format(self.symbol, self.contract[:4])
+
+
 class MarketKey(models.Model):
     market_key = models.CharField(max_length=56, primary_key=True)
 
     raw_asset1 = models.CharField(max_length=255, default='', blank=True)
     raw_asset2 = models.CharField(max_length=255, default='', blank=True)
+
+    # Token symbols for soroban (contract) assets, resolved from the AMM API
+    # by load_market_key_details. Used for human-readable payout memos.
+    asset1_label = models.CharField(max_length=64, default='', blank=True)
+    asset2_label = models.CharField(max_length=64, default='', blank=True)
 
     def __str__(self):
         return self.market_key
@@ -40,8 +57,12 @@ class MarketKey(models.Model):
         if self.raw_asset2:
             return self.get_asset_object(self.raw_asset2)
 
-    def _asset_label(self, raw_asset):
+    def _asset_label(self, raw_asset, stored_label):
         if self._is_contract(raw_asset):
+            # Prefer the resolved token symbol; keep it short so the pair
+            # always fits into a 28-byte text memo ("Bribe: " + 8 + 1 + 8).
+            if stored_label:
+                return stored_label[:8]
             return raw_asset[:4]
 
         return self.get_asset_object(raw_asset).code[:4]
@@ -49,7 +70,10 @@ class MarketKey(models.Model):
     @property
     def short_value(self):
         if self.raw_asset1 and self.raw_asset2:
-            return '{}/{}'.format(self._asset_label(self.raw_asset1), self._asset_label(self.raw_asset2))
+            return '{}/{}'.format(
+                self._asset_label(self.raw_asset1, self.asset1_label),
+                self._asset_label(self.raw_asset2, self.asset2_label),
+            )
         return '{}...{}'.format(self.market_key[:4], self.market_key[-4:])
 
 
