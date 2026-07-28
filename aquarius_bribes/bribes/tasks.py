@@ -27,6 +27,10 @@ def task_load_bribes():
     loader.load_bribes()
 
 
+# Bare soroban contract id, as marketkeys-tracker reports it (C + 55 base32).
+CONTRACT_ID_REGEX = r'^C[A-Z2-7]{55}$'
+
+
 def _get_contract_label(raw_asset: str) -> str:
     """Return the token symbol for a contract asset, resolving it on-chain
     only once per contract (afterwards it is served from the database)."""
@@ -49,9 +53,20 @@ def _get_contract_label(raw_asset: str) -> str:
 
 @celery_app.task(ignore_result=True, soft_time_limit=60 * 30, time_limit=60 * 35)
 def load_market_key_details():
-    for market_key in MarketKey.objects.filter(raw_asset1='').filter(
+    # Also revisit markets whose contract asset has no label yet: a single RPC
+    # failure while resolving the symbol used to leave the label empty forever,
+    # because the row was saved with raw_asset1 set and never looked at again.
+    missing_label = (
+        models.Q(raw_asset1__regex=CONTRACT_ID_REGEX, asset1_label='')
+        | models.Q(raw_asset2__regex=CONTRACT_ID_REGEX, asset2_label='')
+    )
+
+    queryset = MarketKey.objects.filter(
+        models.Q(raw_asset1='') | missing_label,
         bribes__status__in=[Bribe.STATUS_PENDING, Bribe.STATUS_ACTIVE],
-    ):
+    ).distinct()
+
+    for market_key in queryset:
         try:
             url = "{}/api/market-keys/?account_id={}".format(
                 settings.MARKETKEYS_TRACKER_URL.rstrip('/'), market_key.market_key,
