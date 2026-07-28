@@ -1,9 +1,20 @@
+import re
 from datetime import timedelta
 from decimal import ROUND_DOWN, Decimal
 
 from django.db import models
 
 from stellar_sdk import Asset
+
+# Stellar text memos are limited to 28 bytes. Labels are sanitized to ASCII
+# alphanumerics so that "characters" and "bytes" are the same thing: a token
+# `symbol()` is chosen by whoever deployed the token and may be multi-byte
+# (eight emoji are 32 bytes), which would make the payout memo unbuildable.
+MEMO_MAX_BYTES = 28
+MEMO_PREFIX = 'Bribe: '
+CONTRACT_LABEL_MAX_LEN = 8
+CLASSIC_LABEL_MAX_LEN = 4
+NON_ALPHANUMERIC_RE = re.compile(r'[^A-Za-z0-9]')
 
 
 class SorobanTokenSymbol(models.Model):
@@ -57,15 +68,27 @@ class MarketKey(models.Model):
         if self.raw_asset2:
             return self.get_asset_object(self.raw_asset2)
 
+    @staticmethod
+    def _sanitize_label(value: str, max_len: int) -> str:
+        """Reduce a label to at most `max_len` ASCII alphanumerics.
+
+        Token symbols come straight off the contract, so they may contain any
+        unicode; after sanitizing, one character is always one byte, which is
+        what keeps the memo inside its byte budget.
+        """
+        return NON_ALPHANUMERIC_RE.sub('', value or '')[:max_len]
+
     def _asset_label(self, raw_asset, stored_label):
         if self._is_contract(raw_asset):
-            # Prefer the resolved token symbol; keep it short so the pair
-            # always fits into a 28-byte text memo ("Bribe: " + 8 + 1 + 8).
-            if stored_label:
-                return stored_label[:8]
-            return raw_asset[:4]
+            # Prefer the resolved token symbol. A symbol that sanitizes to
+            # nothing (emoji-only, say) falls back to the contract prefix, so
+            # the label is never empty.
+            return (
+                self._sanitize_label(stored_label, CONTRACT_LABEL_MAX_LEN)
+                or raw_asset[:CLASSIC_LABEL_MAX_LEN]
+            )
 
-        return self.get_asset_object(raw_asset).code[:4]
+        return self._sanitize_label(self.get_asset_object(raw_asset).code, CLASSIC_LABEL_MAX_LEN)
 
     @property
     def short_value(self):
@@ -75,6 +98,17 @@ class MarketKey(models.Model):
                 self._asset_label(self.raw_asset2, self.asset2_label),
             )
         return '{}...{}'.format(self.market_key[:4], self.market_key[-4:])
+
+    @property
+    def payout_memo(self) -> str:
+        """Text memo for payout transactions, guaranteed to be buildable.
+
+        Labels are already ASCII-bounded, so the prefix + pair never exceeds the
+        limit; the final clamp is a hard guarantee that no market can produce a
+        transaction that cannot be built (which would be retried forever).
+        """
+        memo = '{}{}'.format(MEMO_PREFIX, self.short_value)
+        return memo.encode('ascii', 'ignore')[:MEMO_MAX_BYTES].decode('ascii')
 
 
 class Bribe(models.Model):
